@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "設定 GL.iNet 路由器",
+        "description": "輸入路由器的管理位址與密碼。如果 Home Assistant 跟路由器不在同一個網段(例如路由器的 LAN 側被 NAT 隔開),要填它在這個網段上可以連到的位址(例如它的 WAN IP),並視情況開 HTTPS。",
+        "data": {
+          "host": "位址(IP 或網域)",
+          "username": "帳號",
+          "password": "密碼",
+          "scheme": "通訊協定",
+          "verify_ssl": "驗證 SSL 憑證"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "帳號或密碼錯誤",
+      "cannot_connect": "連不到路由器,請確認位址跟網路"
+    },
+    "abort": {
+      "already_configured": "這台路由器已經設定過了"
+    }
+  },
+  "services": {
+    "add_static_ip": {
+      "name": "新增固定 IP",
+      "description": "幫某個裝置設定 DHCP 固定 IP(靜態租約)。"
+    },
+    "remove_static_ip": {
+      "name": "移除固定 IP",
+      "description": "移除某個裝置的 DHCP 固定 IP 綁定。"
+    }
+  }
+}

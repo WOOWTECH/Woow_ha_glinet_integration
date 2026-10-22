@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up GL.iNet router",
+        "description": "Enter the router's management address and password. If Home Assistant can't reach the router's LAN side directly (e.g. it's behind its own NAT), use whatever address is reachable from this network (such as its WAN IP) and enable HTTPS if needed.",
+        "data": {
+          "host": "Host (IP or domain)",
+          "username": "Username",
+          "password": "Password",
+          "scheme": "Scheme",
+          "verify_ssl": "Verify SSL certificate"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password",
+      "cannot_connect": "Could not connect to the router"
+    },
+    "abort": {
+      "already_configured": "This router is already configured"
+    }
+  },
+  "services": {
+    "add_static_ip": {
+      "name": "Add static IP",
+      "description": "Set a DHCP static lease (fixed IP) for a device."
+    },
+    "remove_static_ip": {
+      "name": "Remove static IP",
+      "description": "Remove a device's DHCP static lease."
+    }
+  }
+}

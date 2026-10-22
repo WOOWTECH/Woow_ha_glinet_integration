@@ -1,0 +1,53 @@
+add_static_ip:
+  name: 新增固定 IP
+  description: 幫某個裝置設定 DHCP 固定 IP(靜態租約)。
+  fields:
+    device_id:
+      name: 路由器
+      description: 要操作的 GL.iNet 路由器裝置。
+      required: true
+      selector:
+        device:
+          integration: woow_glinet
+    mac:
+      name: MAC 位址
+      description: "目標裝置的 MAC,例如 AA:BB:CC:DD:EE:FF。"
+      required: true
+      example: "AA:BB:CC:DD:EE:FF"
+      selector:
+        text:
+    ip:
+      name: 固定 IP
+      description: 要指派的 IP(必須在路由器的 LAN 網段內)。
+      required: true
+      example: "192.168.8.50"
+      selector:
+        text:
+    name:
+      name: 名稱
+      description: 這筆綁定的備註名稱。
+      required: true
+      selector:
+        text:
+
+remove_static_ip:
+  name: 移除固定 IP（目前這台裝置的韌體不支援）
+  description: >-
+    移除某個裝置的 DHCP 固定 IP 綁定。注意：實測過這台路由器的韌體上這個 API
+    無法正常運作（永遠回 Invalid params），呼叫這個服務會直接回報錯誤並說明要怎麼
+    用 SSH 手動處理，不會真的嘗試呼叫。
+  fields:
+    device_id:
+      name: 路由器
+      description: 要操作的 GL.iNet 路由器裝置。
+      required: true
+      selector:
+        device:
+          integration: woow_glinet
+    mac:
+      name: MAC 位址
+      description: 要移除綁定的裝置 MAC。
+      required: true
+      example: "AA:BB:CC:DD:EE:FF"
+      selector:
+        text:
