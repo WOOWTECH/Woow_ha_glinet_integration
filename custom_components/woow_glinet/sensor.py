@@ -11,22 +11,36 @@ from homeassistant.const import EntityCategory, UnitOfDataRate
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .const import MODE_ROUTER
 from .coordinator import GlinetCoordinator
 from .entity import GlinetClientEntity, GlinetEntity
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback) -> None:
-    """Set up router-level sensors, then track clients as they appear."""
-    coordinator: GlinetCoordinator = entry.runtime_data.coordinator
+    """Set up router-level sensors, then track clients as they appear.
 
-    async_add_entities(
-        [
+    `clients.get_list` only scopes to "devices actually connected to this
+    device" when it's in router mode. In every other mode (ap/repeater/
+    relay/wds/mesh/passthrough) it's bridged onto a shared network segment
+    and the call returns *every* device on that whole segment, not just
+    this device's own - so per-client entities are skipped there to avoid
+    flooding HA with devices unrelated to this GL.iNet unit. Likewise WAN
+    speed is always 0 outside router mode (there's no NAT/WAN to measure).
+    """
+    coordinator: GlinetCoordinator = entry.runtime_data.coordinator
+    is_router = coordinator.data.mode == MODE_ROUTER
+
+    entities: list[SensorEntity] = [GlinetModeSensor(coordinator), GlinetFirmwareSensor(coordinator)]
+    if is_router:
+        entities += [
             GlinetWanSpeedSensor(coordinator, "speed_rx", "WAN 下載速度"),
             GlinetWanSpeedSensor(coordinator, "speed_tx", "WAN 上傳速度"),
             GlinetConnectedClientsSensor(coordinator),
-            GlinetFirmwareSensor(coordinator),
         ]
-    )
+    async_add_entities(entities)
+
+    if not is_router:
+        return
 
     known_macs: set[str] = set()
 
@@ -45,6 +59,20 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
 
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new_clients))
     _async_add_new_clients()
+
+
+class GlinetModeSensor(GlinetEntity, SensorEntity):
+    """目前的上網模式(router/ap/repeater/...)，決定哪些其他 entity 會出現。"""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_name = "模式"
+
+    def __init__(self, coordinator: GlinetCoordinator) -> None:
+        super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_mode")
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.data.mode
 
 
 class GlinetWanSpeedSensor(GlinetEntity, SensorEntity):

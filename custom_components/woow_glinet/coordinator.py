@@ -12,7 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import GlinetApiError, GlinetClient
-from .const import DOMAIN, UPDATE_INTERVAL
+from .const import DOMAIN, MODE_ROUTER, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class GlinetData:
     static_binds: list[dict[str, Any]] = field(default_factory=list)
     blacklist_mode: str = "black"
     device_info: dict[str, Any] = field(default_factory=dict)
+    mode: str = MODE_ROUTER
 
 
 class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
@@ -44,6 +45,7 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
         )
         self.client = client
         self.device_info: dict[str, Any] = {}
+        self.mode: str = MODE_ROUTER
 
     async def _async_fetch_device_info(self) -> None:
         if self.device_info:
@@ -53,8 +55,19 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
         except GlinetApiError as err:
             _LOGGER.debug("讀取 system.get_info 失敗（不影響其他感測器）：%s", err)
 
+    async def _async_fetch_mode(self) -> None:
+        """只在第一次抓,之後快cache——模式是使用者刻意切的,很少變,
+        整合期間重新偵測沒有意義;真的切了模式要重新載入這個整合才會生效。"""
+        try:
+            result = await self.client.call("netmode", "get_mode")
+            self.mode = (result or {}).get("mode", MODE_ROUTER)
+        except GlinetApiError as err:
+            _LOGGER.debug("讀取 netmode.get_mode 失敗，當作 router 模式：%s", err)
+
     async def _async_update_data(self) -> GlinetData:
         await self._async_fetch_device_info()
+        if self.data is None:
+            await self._async_fetch_mode()
 
         try:
             wan_speed = await self.client.call("clients", "get_wan_speed")
@@ -66,7 +79,11 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
             raise UpdateFailed(f"跟路由器溝通失敗：{err}") from err
 
         clients = (clients_res or {}).get("clients", [])
-        self._async_sync_client_devices(clients)
+        if self.mode == MODE_ROUTER:
+            # 非 router 模式下 clients.get_list 看到的是整個共用網段的所有裝置
+            # (不是只有接這台裝置的),不要幫這些裝置建 HA device,會灌一堆跟這台
+            # 裝置無關的「幽靈裝置」進裝置登錄表。
+            self._async_sync_client_devices(clients)
 
         return GlinetData(
             wan_speed=wan_speed or {},
@@ -75,6 +92,7 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
             static_binds=(static_res or {}).get("static_bind_list", []),
             blacklist_mode=(bwl_res or {}).get("mode", "black"),
             device_info=self.device_info,
+            mode=self.mode,
         )
 
     def _async_sync_client_devices(self, clients: list[dict[str, Any]]) -> None:

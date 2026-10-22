@@ -11,7 +11,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import GlinetApiError
-from .const import BLACKLIST_MODE, OPERATE_ADD
+from .const import BLACKLIST_MODE, MODE_ROUTER, OPERATE_ADD
 from .coordinator import GlinetCoordinator
 from .entity import GlinetClientEntity, GlinetEntity
 
@@ -27,6 +27,12 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
         for iface in band.get("ifaces", [])
     ]
     async_add_entities(wifi_entities)
+
+    if coordinator.data.mode != MODE_ROUTER:
+        # 非 router 模式下 clients.get_list 看到的是整個共用網段,不是只有這台
+        # 裝置自己的客戶端,「封鎖」開關在這種情況下語意不明(不確定封鎖得到的是
+        # 不是真的接在這台裝置上的裝置),不建這些 entity。
+        return
 
     known_macs: set[str] = set()
 

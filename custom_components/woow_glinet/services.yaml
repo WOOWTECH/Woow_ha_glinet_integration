@@ -1,6 +1,9 @@
 add_static_ip:
   name: 新增固定 IP
-  description: 幫某個裝置設定 DHCP 固定 IP(靜態租約)。
+  description: >-
+    幫某個裝置設定 DHCP 固定 IP(靜態租約)。只有路由器在 router 模式下才有意義
+    (ap/repeater 等其他模式下這台裝置沒有自己在跑 DHCP server,設了不會生效,
+    呼叫這個服務會直接回報並拒絕執行)。
   fields:
     device_id:
       name: 路由器

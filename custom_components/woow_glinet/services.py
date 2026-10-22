@@ -10,7 +10,15 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
 from .api import GlinetApiError
-from .const import ATTR_IP, ATTR_MAC, ATTR_NAME, DOMAIN, SERVICE_ADD_STATIC_IP, SERVICE_REMOVE_STATIC_IP
+from .const import (
+    ATTR_IP,
+    ATTR_MAC,
+    ATTR_NAME,
+    DOMAIN,
+    MODE_ROUTER,
+    SERVICE_ADD_STATIC_IP,
+    SERVICE_REMOVE_STATIC_IP,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +53,13 @@ def async_register_services(hass: HomeAssistant) -> None:
         coordinator = async_get_coordinator_for_device(hass, call.data[ATTR_DEVICE_ID])
         if coordinator is None:
             raise HomeAssistantError(f"找不到對應的 GL.iNet 路由器裝置：{call.data[ATTR_DEVICE_ID]}")
+        if coordinator.data.mode != MODE_ROUTER:
+            # 固定 IP 是這台裝置自己的 DHCP server 的設定,只有 router 模式下
+            # 才有自己的 DHCP server 在跑,其他模式下設了也不會有任何作用。
+            raise HomeAssistantError(
+                f"這台裝置目前是「{coordinator.data.mode}」模式,不是 router 模式,"
+                "沒有自己在跑 DHCP server,設定固定 IP 不會有任何作用,先不執行。"
+            )
         return coordinator
 
     async def _async_add_static_ip(call: ServiceCall) -> None:
