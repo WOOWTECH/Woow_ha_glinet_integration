@@ -17,8 +17,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
 
     if coordinator.data.mode != MODE_ROUTER:
         # 非 router 模式下 clients.get_list 看到的是整個共用網段的所有裝置,
-        # 不是只有接這台裝置的,追踪它們的連線狀態沒有意義(而且會跟其他真正
-        # 負責那些裝置的 integration 戶著建立同一個裝置)。
+        # 不是只有接這台裝置的,追蹤它們的連線狀態沒有意義(而且會跟其他真正
+        # 負責那些裝置的 integration 搶著建立同一個裝置)。
         return
 
     known_macs: set[str] = set()
