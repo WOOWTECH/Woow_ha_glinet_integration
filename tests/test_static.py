@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -311,15 +312,30 @@ def test_no_secret_is_hard_coded() -> None:
     assert hits == []
 
 
-def test_the_code_never_contacts_the_known_real_devices() -> None:
-    """The real lab router / Home Assistant must never be baked into the integration or the tests."""
-    forbidden = tuple("".join(parts) for parts in (("192.168.2.", "45"), ("192.168.2.", "34"), (".config/glinet-", "router")))
+def test_nothing_of_the_real_lab_is_in_the_repository() -> None:
+    """The real lab router / Home Assistant / Wi-Fi password must never be baked into a file of this repository.
+
+    The strings are written in pieces so that this file does not contain them either."""
+    pieces = (
+        ("192.168.2.", "45"), ("192.168.2.", "34"), ("192.168.2.", "49"), (".config/glinet-", "router"),
+        ("good", "life"),  # the lab router's Wi-Fi password
+        ("94:83:c4:62:", "28:f2"), ("d2:98:", "85:a0:de:4b"),  # its WAN MAC and one of its BSSIDs
+    )  # fmt: skip
+    forbidden = tuple("".join(parts) for parts in pieces)
+    skip_dirs = {".git", "node_modules", "__pycache__", ".pytest_cache", ".venv", "venv"}
+    suffixes = {".py", ".js", ".mjs", ".ts", ".html", ".json", ".md", ".yml", ".yaml", ".txt", ".cfg", ".toml", ".sh"}
     here = Path(__file__).resolve()
-    for path in [*PACKAGE.glob("*.py"), *Path(__file__).parent.glob("*.py")]:
-        if path == here:
-            continue
-        text = path.read_text(encoding="utf-8")
-        assert not [f for f in forbidden if f in text], f"{path.name} mentions a real device"
+    checked = 0
+    for folder, dirs, names in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith("venv")]
+        for name in names:
+            path = Path(folder) / name
+            if path == here or path.suffix not in suffixes:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore").lower()
+            assert not [f for f in forbidden if f in text], f"{path.relative_to(ROOT)} mentions the real lab"
+            checked += 1
+    assert checked > 50, "the walk found hardly any file: is ROOT right?"
 
 
 # ===================================================================================== CI
