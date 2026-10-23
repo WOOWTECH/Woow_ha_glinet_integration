@@ -7,8 +7,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .activity import Origin
+from .const import OPTION_EXPOSE_WIFI_PASSWORDS
 from .coordinator import GlinetCoordinator
-from .entity import GlinetEntity
+from .entity import GlinetWifiEntity
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback) -> None:
@@ -18,28 +19,18 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
     for band in coordinator.data.wifi_bands:
         for iface in band.get("ifaces", []):
             name = iface["name"]
-            label = iface.get("ssid") or name
-            entities.append(GlinetWifiSsidText(coordinator, name, label))
-            entities.append(GlinetWifiKeyText(coordinator, name, label))
+            entities.append(GlinetWifiSsidText(coordinator, name))
+            entities.append(GlinetWifiKeyText(coordinator, name))
     async_add_entities(entities)
 
 
-class _GlinetWifiFieldText(GlinetEntity, TextEntity):
+class _GlinetWifiFieldText(GlinetWifiEntity, TextEntity):
     _field: str
 
-    def __init__(self, coordinator: GlinetCoordinator, iface_name: str, label: str, suffix: str) -> None:
+    def __init__(self, coordinator: GlinetCoordinator, iface_name: str) -> None:
         super().__init__(
-            coordinator, f"{coordinator.config_entry.entry_id}_wifi_{iface_name}_{self._field}"
+            coordinator, f"{coordinator.config_entry.entry_id}_wifi_{iface_name}_{self._field}", iface_name
         )
-        self._iface_name = iface_name
-        self._attr_name = f"WiFi {label} {suffix}"
-
-    def _iface(self) -> dict | None:
-        for band in self.coordinator.data.wifi_bands:
-            for iface in band.get("ifaces", []):
-                if iface.get("name") == self._iface_name:
-                    return iface
-        return None
 
     @property
     def available(self) -> bool:
@@ -60,20 +51,28 @@ class GlinetWifiSsidText(_GlinetWifiFieldText):
     """WiFi SSID(名稱)。"""
 
     _field = "ssid"
+    _attr_translation_key = "wifi_ssid"
     _attr_native_min = 1
     _attr_native_max = 32
-
-    def __init__(self, coordinator: GlinetCoordinator, iface_name: str, label: str) -> None:
-        super().__init__(coordinator, iface_name, label, "SSID")
 
 
 class GlinetWifiKeyText(_GlinetWifiFieldText):
     """WiFi 密碼。"""
 
     _field = "key"
+    _attr_translation_key = "wifi_key"
     _attr_mode = TextMode.PASSWORD
     _attr_native_min = 8
     _attr_native_max = 63
+    # a password in an entity state is readable by every user who can see states, and ends up in the history
+    # database: new installs start with these entities disabled, and they are write-only unless the option is on
+    _attr_entity_registry_enabled_default = False
 
-    def __init__(self, coordinator: GlinetCoordinator, iface_name: str, label: str) -> None:
-        super().__init__(coordinator, iface_name, label, "密碼")
+    @property
+    def native_value(self) -> str | None:
+        if not self.coordinator.config_entry.options.get(OPTION_EXPOSE_WIFI_PASSWORDS, False):
+            return None
+        value = super().native_value
+        # an open network has no key (empty, or shorter than a text entity may hold): nothing to show
+        return value if isinstance(value, str) and len(value) >= self._attr_native_min else None
+

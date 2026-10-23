@@ -3,6 +3,7 @@
 
 import { LitElement, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 
 import { Api, Client, Router, Sample, clientName, copyText, define } from "../api";
 import "../chart";
@@ -13,7 +14,7 @@ import { askConfirm, ifaceLabel, notify } from "../ui";
 type Filter = "all" | "online" | "offline" | "blocked";
 type Sort = "speed" | "total" | "name" | "ip";
 const FILTERS: Filter[] = ["all", "online", "offline", "blocked"];
-const SORTS: Sort[] = ["speed", "total", "name", "ip"];
+const SORTS: Sort[] = ["name", "speed", "total", "ip"];
 const value = (e: Event) => (e.target as HTMLInputElement).value;
 const ipNumber = (ip: string) => ip.split(".").reduce((n, part) => n * 256 + (Number(part) || 0), 0);
 
@@ -25,7 +26,7 @@ export class WoowGlinetClients extends LitElement {
 
   @state() private query = "";
   @state() private filter: Filter = "all";
-  @state() private sort: Sort = "speed";
+  @state() private sort: Sort = "name"; // stable: sorting by live speed moves cards under the pointer every few seconds
   @state() private open: string | null = null;
   @state() private history: Sample[] = [];
   @state() private busy: string | null = null;
@@ -69,6 +70,10 @@ export class WoowGlinetClients extends LitElement {
         border-radius: 10px;
         padding: 10px 12px;
         display: grid;
+        grid-template-columns: minmax(0, 1fr); /* the column must not grow to a long unbroken name */
+        min-width: 0;
+        content-visibility: auto; /* a site with hundreds of devices: skip layout and paint of cards off screen */
+        contain-intrinsic-size: auto 190px;
         gap: 6px;
         align-content: start;
         background: var(--card-background-color, #fff);
@@ -98,6 +103,12 @@ export class WoowGlinetClients extends LitElement {
       }
     `,
   ];
+
+  updated(changed: Map<string, unknown>): void {
+    if (changed.has("fixing") && this.fixing) {
+      (this.renderRoot.querySelector(".dialog input") as HTMLInputElement | null)?.focus();
+    }
+  }
 
   willUpdate(changed: Map<string, unknown>): void {
     // While a device's details are open, its live speed keeps drawing the chart.
@@ -285,8 +296,9 @@ export class WoowGlinetClients extends LitElement {
     const c = this.fixing;
     if (!c) return nothing;
     const t = this.t;
-    return html`<div class="scrim" @click=${(e: Event) => e.target === e.currentTarget && (this.fixing = null)}>
-      <div class="dialog">
+    return html`<div class="scrim" @click=${(e: Event) => e.target === e.currentTarget && (this.fixing = null)}
+        @keydown=${(e: KeyboardEvent) => e.key === "Escape" && (this.fixing = null)}>
+      <div class="dialog" role="dialog" aria-modal="true" aria-label=${t("static_title", { name: clientName(c) })}>
         <h2>${t("static_title", { name: clientName(c) })}</h2>
         <div class="muted">${t("static_hint")}</div>
         <div class="mono muted">${c.mac}</div>
@@ -312,8 +324,8 @@ export class WoowGlinetClients extends LitElement {
     const offline = this.count("offline");
     return html`<div class="card">
         <div class="bar">
-          <input type="search" .value=${this.query} placeholder=${t("search_ph")} @input=${(e: Event) => (this.query = value(e))} />
-          <select @change=${(e: Event) => (this.sort = value(e) as Sort)} aria-label="sort">
+          <input type="search" .value=${this.query} placeholder=${t("search_ph")} aria-label=${t("search_ph")} @input=${(e: Event) => (this.query = value(e))} />
+          <select @change=${(e: Event) => (this.sort = value(e) as Sort)} aria-label=${t("sort_label")}>
             ${SORTS.map((s) => html`<option value=${s} ?selected=${this.sort === s}>${t(`sort_${s}` as "sort_speed")}</option>`)}
           </select>
         </div>
@@ -328,7 +340,7 @@ export class WoowGlinetClients extends LitElement {
         </div>
         ${rows.length === 0
           ? html`<div class="empty">${this.router.clients.length ? t("clients_empty") : t("clients_none")}</div>`
-          : html`<div class="list">${rows.map((c) => this.renderClient(c))}</div>`}
+          : html`<div class="list">${repeat(rows, (c) => c.mac, (c) => this.renderClient(c))}</div>`}
       </div>
       ${this.renderFixDialog()}`;
   }

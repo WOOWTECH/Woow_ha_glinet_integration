@@ -6,6 +6,8 @@ export const shared = css`
     display: block;
     color: var(--primary-text-color);
     font-family: var(--paper-font-body1_-_font-family, Roboto, "Noto Sans TC", sans-serif);
+    /* device names and SSIDs are whatever people typed: a 300-character name must wrap, not widen the page */
+    overflow-wrap: anywhere;
   }
   .card {
     background: var(--card-background-color, #fff);
@@ -47,6 +49,10 @@ export const shared = css`
     background: var(--secondary-background-color, #eee);
     color: var(--secondary-text-color);
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
   }
   .chip.ok {
     background: rgba(67, 160, 71, 0.15);
@@ -190,5 +196,31 @@ export const shared = css`
   .dialog input,
   .dialog select {
     font-size: 1.05em;
+  }
+  /* Text colours from the theme can be too pale on their own tinted backgrounds (WCAG AA wants 4.5:1):
+     mix them toward the theme's text colour, which darkens them on a light theme and lightens them on a dark one. */
+  @supports (color: color-mix(in srgb, red 50%, blue)) {
+    .chip.ok,
+    .rx {
+      color: color-mix(in srgb, var(--success-color, #43a047) 62%, var(--primary-text-color, #212121));
+    }
+    .chip.info,
+    .tx {
+      color: color-mix(in srgb, var(--info-color, #039be5) 62%, var(--primary-text-color, #212121));
+    }
+    .chip.bad,
+    .fail,
+    button.danger {
+      color: color-mix(in srgb, var(--error-color, #db4437) 66%, var(--primary-text-color, #212121));
+    }
+    .chip.warn {
+      color: color-mix(in srgb, var(--warning-color, #ff9800) 50%, var(--primary-text-color, #212121));
+    }
+    button.link {
+      color: color-mix(in srgb, var(--primary-color) 65%, var(--primary-text-color, #212121));
+    }
+    .chip {
+      color: color-mix(in srgb, var(--secondary-text-color) 70%, var(--primary-text-color, #212121));
+    }
   }
 `;

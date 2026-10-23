@@ -1,0 +1,46 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Home Assistant ships every month and deprecates things (DeviceInfo.via_device, DeviceEntry.config_entries ...):
+    # a weekly run tells us before a user does.
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  tests:
+    name: Tests (Python 3.14, Home Assistant 2026.10)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: tests/requirements_test.txt
+      # pytest-homeassistant-custom-component pins homeassistant (and pytest, pytest-asyncio, pytest-cov ...) itself;
+      # the exact versions the suite was written against are in tests/requirements_test.txt
+      - run: pip install -r tests/requirements_test.txt
+      # Everything runs against tools/mock_router.py in-process: no network, no router, no Home Assistant instance.
+      - run: python -m pytest tests -q --cov=custom_components.woow_glinet --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=90

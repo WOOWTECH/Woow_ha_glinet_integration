@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" /><link rel="icon" href="data:," /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --primary-color:#03a9f4; --text-primary-color:#fff; --primary-background-color:#fafafa; --card-background-color:#fff; --secondary-background-color:#e5e5e5;
+    --primary-text-color:#212121; --secondary-text-color:#727272; --divider-color:rgba(0,0,0,.12); --app-header-background-color:#03a9f4; --app-header-text-color:#fff;
+    --success-color:#43a047; --error-color:#db4437; --warning-color:#ff9800; --info-color:#039be5; --disabled-text-color:#9e9e9e; }
+  :root.dark { --primary-background-color:#111; --card-background-color:#1c1c1c; --secondary-background-color:#2c2c2c; --primary-text-color:#e1e1e1; --secondary-text-color:#9b9b9b;
+    --divider-color:rgba(225,225,225,.12); --app-header-background-color:#1c1c1c; }
+  body { margin:0; background:var(--primary-background-color); font-family: Roboto, "Noto Sans TC", sans-serif; }
+</style>
+</head>
+<body>
+<script type="module">
+  import "/custom_components/woow_glinet/frontend/woow-glinet-panel.js"; // built by `npm run build`
+  import { scenarios } from "./fixtures.js";
+  const q = new URLSearchParams(location.search);
+  const lang = q.get("lang") || "en";
+  if (q.get("dark") === "1") document.documentElement.classList.add("dark");
+  const fx = scenarios[q.get("s") || "many"]();
+  window.__calls = []; let snapshotsSeen = 0; const failFirst = Number(q.get('failfirst') || 0);
+  const hass = {
+    language: lang, locale: { language: lang },
+    connection: { subscribeMessage: async (cb) => { window.__feed = cb; return async () => {}; } },
+    callWS: async (msg) => {
+      window.__calls.push(msg);
+      await new Promise((r) => setTimeout(r, 150));
+      if (msg.type === "woow_glinet/snapshot") { snapshotsSeen++; if (fx.error || snapshotsSeen <= failFirst) throw { code: "unknown_command", message: "Unknown command." }; return structuredClone(fx.snapshot); }
+      if (msg.type === "woow_glinet/client/history") return { series: Array.from({ length: 60 }, (_, i) => [Date.now() / 1000 - (60 - i) * 5, 1e5 * (1 + Math.sin(i / 5)), 2e4 * (1 + Math.cos(i / 6))]) };
+      if (msg.type === "woow_glinet/wifi/key") return { key: "secret-pass-123" };
+      if (msg.type === "woow_glinet/static_ip/add" && !/^192\.168\.8\./.test(msg.ip)) throw { code: "ip_outside_lan", message: "outside" };
+      if (msg.type === "woow_glinet/client/block" && msg.mac === "FA:IL:00:00:00:01") throw { code: "api_error", message: "router said no" };
+      return null;
+    },
+  };
+  const panel = document.createElement("woow-glinet-panel");
+  panel.narrow = innerWidth < 870;
+  panel.hass = hass;
+  document.body.append(panel);
+  window.__panel = panel;
+  // live ticks for the demo
+  if (q.get("live") === "1" && fx.snapshot?.routers[0]) {
+    setInterval(() => {
+      const r = fx.snapshot.routers[0];
+      window.__feed?.({ kind: "live", entry_id: r.entry_id, t: Date.now() / 1000, wan: { rx: Math.round(3e5 + 2e5 * Math.random()), tx: Math.round(5e4 * Math.random()) },
+        clients: r.clients.map((c) => ({ ...c, rx: c.online ? Math.round(Math.random() * 8e5) : 0, tx: c.online ? Math.round(Math.random() * 1e5) : 0 })) });
+    }, 1500);
+  }
+</script>
+</body>
+</html>

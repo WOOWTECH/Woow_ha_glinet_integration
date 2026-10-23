@@ -76,9 +76,18 @@ class ActivityLog:
         self._users: dict[str, str | None] = {}
 
     async def async_load(self) -> None:
-        data = await self._store.async_load() or {}
+        data = await self._store.async_load()
+        stored = data.get("entries") if isinstance(data, dict) else None
         names = set(Activity.__dataclass_fields__)
-        self.entries = [Activity(**{k: v for k, v in raw.items() if k in names}) for raw in data.get("entries", [])]
+        entries: list[Activity] = []
+        for raw in stored if isinstance(stored, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                entries.append(Activity(**{k: v for k, v in raw.items() if k in names}))
+            except TypeError:  # a damaged entry must not stop the integration from loading
+                continue
+        self.entries = entries
 
     def _data(self) -> dict[str, Any]:
         return {"entries": [asdict(e) for e in self.entries]}
@@ -109,6 +118,8 @@ class ActivityLog:
             cb({"entries": [asdict(entry)]})
 
     def recent(self, limit: int = 200) -> list[dict[str, Any]]:
+        if limit <= 0:
+            return []
         return [asdict(e) for e in reversed(self.entries[-limit:])]
 
     @callback

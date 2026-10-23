@@ -3,7 +3,26 @@
     "step": {
       "user": {
         "title": "Set up GL.iNet router",
-        "description": "Enter the router's management address and password. If Home Assistant can't reach the router's LAN side directly (e.g. it's behind its own NAT), use whatever address is reachable from this network (such as its WAN IP) and enable HTTPS if needed.",
+        "description": "Enter the router's management address and password. If Home Assistant can't reach the router's LAN side directly (e.g. it's behind its own NAT), use whatever address is reachable from this network (such as its WAN IP) and enable HTTPS if needed. A pasted web address such as https://192.168.8.1/ is fine.",
+        "data": {
+          "host": "Host (IP or domain)",
+          "username": "Username",
+          "password": "Password",
+          "scheme": "Scheme",
+          "verify_ssl": "Verify SSL certificate"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate {name}",
+        "description": "The router at {host} rejected the stored username or password (was the password changed?). Enter the current ones.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Change the settings of {name}",
+        "description": "Change the address, protocol or login of this router. Leave the password empty to keep the current one.",
         "data": {
           "host": "Host (IP or domain)",
           "username": "Username",
@@ -18,7 +37,10 @@
       "cannot_connect": "Could not connect to the router"
     },
     "abort": {
-      "already_configured": "This router is already configured"
+      "already_configured": "This router is already configured",
+      "reauth_successful": "Re-authentication was successful",
+      "reconfigure_successful": "The settings were updated",
+      "wrong_device": "That address belongs to a different router than the one being changed"
     }
   },
   "services": {
@@ -29,6 +51,63 @@
     "remove_static_ip": {
       "name": "Remove static IP",
       "description": "Remove a device's DHCP static lease."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "WOOW GL.iNet options",
+        "description": "Show Wi-Fi passwords as the state of their text entities. Anyone who can see entity states can then read them, and they are kept in the history database. The sidebar panel does not need this.",
+        "data": {
+          "expose_wifi_passwords": "Show Wi-Fi passwords as entity states"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "mode": {
+        "name": "Mode"
+      },
+      "firmware": {
+        "name": "Firmware version"
+      },
+      "connected_clients": {
+        "name": "Connected devices"
+      },
+      "wan_download": {
+        "name": "WAN download speed"
+      },
+      "wan_upload": {
+        "name": "WAN upload speed"
+      },
+      "client_download": {
+        "name": "Download speed"
+      },
+      "client_upload": {
+        "name": "Upload speed"
+      }
+    },
+    "switch": {
+      "wifi": {
+        "name": "Wi-Fi {ssid}"
+      },
+      "client_block": {
+        "name": "Block"
+      }
+    },
+    "text": {
+      "wifi_ssid": {
+        "name": "Wi-Fi {ssid} SSID"
+      },
+      "wifi_key": {
+        "name": "Wi-Fi {ssid} password"
+      }
+    },
+    "button": {
+      "reboot": {
+        "name": "Reboot"
+      }
     }
   }
 }

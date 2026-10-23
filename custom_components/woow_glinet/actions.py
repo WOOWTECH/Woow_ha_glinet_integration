@@ -6,6 +6,7 @@ activity log, so the three doors behave the same.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import re
 from typing import TYPE_CHECKING, Any
@@ -13,13 +14,15 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.exceptions import HomeAssistantError
 
 from .activity import ActivityLog, Origin
-from .api import GlinetApiError
+from .api import GlinetApiError, GlinetDisconnected, GlinetInvalidAuth
 from .const import BLACKLIST_MODE, DOMAIN, MODE_ROUTER, OPERATE_ADD
 
 if TYPE_CHECKING:
     from .coordinator import GlinetCoordinator
 
 _MAC_SEPARATORS = re.compile(r"[:\-.\s]")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+WIFI_APPLY_TIMEOUT = 40  # s: the router takes ~9 s to apply a Wi-Fi change; a loaded one longer
 _HEX12 = re.compile(r"^[0-9A-F]{12}$")
 
 
@@ -29,6 +32,14 @@ class ActionError(HomeAssistantError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+def _byte_length(text: str) -> int | None:
+    """Length in UTF-8 bytes, or None for a string that cannot be encoded (a lone surrogate from a hostile client)."""
+    try:
+        return len(text.encode())
+    except UnicodeEncodeError:
+        return None
 
 
 def normalize_mac(value: str) -> str:
@@ -44,6 +55,9 @@ class GlinetActions:
 
     def __init__(self, coordinator: GlinetCoordinator) -> None:
         self.coordinator = coordinator
+        # Unblocking reads the whole blocklist, drops one MAC and writes it back: two of those at once
+        # (an automation unblocking several devices) would overwrite each other.
+        self._blocklist_lock = asyncio.Lock()
 
     # ---- helpers -----------------------------------------------------------------------
     @property
@@ -55,9 +69,15 @@ class GlinetActions:
             entry = self.coordinator.config_entry
             await log.async_record(origin, entry.entry_id, entry.title, action, msg, args, ok)
 
-    async def _call(self, obj: str, method: str, params: dict[str, Any] | None = None) -> Any:
+    async def _call(
+        self, obj: str, method: str, params: dict[str, Any] | None = None, timeout: float | None = None
+    ) -> Any:
         try:
-            return await self.coordinator.client.call(obj, method, params)
+            if timeout is None:
+                return await self.coordinator.client.call(obj, method, params)
+            return await self.coordinator.client.call(obj, method, params, timeout)
+        except GlinetInvalidAuth as err:
+            raise ActionError("auth_failed", f"路由器拒絕了帳號或密碼，請到「設定 › 裝置與服務」重新驗證：{err}") from err
         except GlinetApiError as err:
             raise ActionError("api_error", f"路由器回報錯誤：{err}") from err
 
@@ -105,15 +125,17 @@ class GlinetActions:
             if enabled is not None:
                 patch["enabled"] = bool(enabled)
             if ssid is not None:
-                if not 1 <= len(ssid.encode()) <= 32:  # the 802.11 limit is 32 bytes, a Chinese character takes 3
-                    raise ActionError("bad_ssid", "WiFi 名稱（SSID）要 1～32 個位元組，一個中文字佔 3 個")
+                size = _byte_length(ssid)  # 802.11: 32 bytes, a Chinese character takes 3
+                if size is None or _CONTROL.search(ssid) or not 1 <= size <= 32:
+                    raise ActionError("bad_ssid", "WiFi 名稱（SSID）要 1～32 個位元組（一個中文字佔 3 個），不能有控制字元")
                 patch["ssid"] = ssid
             if key is not None:
-                if not 8 <= len(key) <= 63:
-                    raise ActionError("bad_key", "WiFi 密碼要 8～63 個字元")
+                size = _byte_length(key)
+                if size is None or _CONTROL.search(key) or not 8 <= size <= 63:
+                    raise ActionError("bad_key", "WiFi 密碼要 8～63 個位元組，不能有控制字元")
                 patch["key"] = key
             if patch:
-                await self._call("wifi", "set_config", {"iface_name": iface, **patch})
+                await self._call("wifi", "set_config", {"iface_name": iface, **patch}, WIFI_APPLY_TIMEOUT)
         except ActionError as err:
             await self._record(origin, "wifi", "wifi_failed", False, iface=iface, error=str(err), code=err.code)
             raise
@@ -129,8 +151,16 @@ class GlinetActions:
         await self._refresh()
 
     # ---- blocking (MAC blacklist) --------------------------------------------------------
+    async def _valid_mac(self, raw: str, origin: Origin, action: str, msg: str, **args: Any) -> str:
+        """The normalised MAC; a malformed one is refused and logged like every other failure."""
+        try:
+            return normalize_mac(raw)
+        except ActionError as err:
+            await self._record(origin, action, msg, False, mac=str(raw)[:64], error=str(err), code=err.code, **args)
+            raise
+
     async def set_blocked(self, mac: str, blocked: bool, *, origin: Origin) -> None:
-        mac = normalize_mac(mac)
+        mac = await self._valid_mac(mac, origin, "block", "block_failed")
         name = self._client_name(mac)
         try:
             self._require_router_mode("裝置封鎖")
@@ -144,10 +174,12 @@ class GlinetActions:
             else:
                 # 實測過 set_single_mac 的 operate="remove"/"delete" 都不會真的生效
                 # （呼叫成功但清單沒變），解除封鎖要整批重寫清單：讀現有黑名單、
-                # 濾掉這個 mac、用 set_config 送回去才會真的拿掉。
-                current = await self._call("black_white_list", "get_config")
-                remaining = [m for m in (current or {}).get("black_mac", []) if m.upper() != mac]
-                await self._call("black_white_list", "set_config", {"mode": mode, "mac": remaining})
+                # 濾掉這個 mac、用 set_config 送回去才會真的拿掉。讀和寫之間要鎖住，
+                # 不然同時解除兩個裝置時，後寫的會把前一個的結果蓋掉。
+                async with self._blocklist_lock:
+                    current = await self._call("black_white_list", "get_config")
+                    remaining = [m for m in (current or {}).get("black_mac", []) if m.upper() != mac]
+                    await self._call("black_white_list", "set_config", {"mode": mode, "mac": remaining})
         except ActionError as err:
             await self._record(origin, "block", "block_failed", False, mac=mac, error=str(err), code=err.code)
             raise
@@ -156,14 +188,18 @@ class GlinetActions:
 
     # ---- static IP (DHCP reservation) -----------------------------------------------------
     async def add_static_ip(self, mac: str, ip: str, name: str, *, origin: Origin) -> None:
-        mac = normalize_mac(mac)
+        mac = await self._valid_mac(mac, origin, "static_ip", "static_ip_failed", ip=str(ip)[:64])
         try:
             addr = ipaddress.IPv4Address(ip.strip())
         except ValueError as err:
-            raise ActionError("invalid_ip", f"IP 位址格式不正確：{ip}") from err
+            error = ActionError("invalid_ip", f"IP 位址格式不正確：{ip}")
+            await self._record(origin, "static_ip", "static_ip_failed", False, mac=mac, ip=str(ip)[:64], error=str(error), code=error.code)
+            raise error from err
         name = name.strip()
         if not name:
-            raise ActionError("bad_name", "名稱不能是空的")
+            error = ActionError("bad_name", "名稱不能是空的")
+            await self._record(origin, "static_ip", "static_ip_failed", False, mac=mac, ip=str(addr), error=str(error), code=error.code)
+            raise error
         try:
             self._require_router_mode("固定 IP（DHCP 租約）")
             if (lan := self.lan_network()) is not None:
@@ -185,7 +221,7 @@ class GlinetActions:
     # ---- forgetting an offline device ----------------------------------------------------------
     async def forget_client(self, mac: str, *, origin: Origin) -> None:
         """Remove an offline device from the router's own client database."""
-        mac = normalize_mac(mac)
+        mac = await self._valid_mac(mac, origin, "forget", "forget_failed")
         name = self._client_name(mac)
         try:
             client = self._client(mac)
@@ -201,7 +237,12 @@ class GlinetActions:
     # ---- reboot ------------------------------------------------------------------------------
     async def reboot(self, *, origin: Origin) -> None:
         try:
-            await self._call("system", "reboot")
+            try:
+                await self._call("system", "reboot")
+            except ActionError as err:
+                # a router that is going down may cut the connection instead of answering: that is the reboot working
+                if not isinstance(err.__cause__, GlinetDisconnected):
+                    raise
         except ActionError as err:
             await self._record(origin, "reboot", "reboot_failed", False, error=str(err), code=err.code)
             raise

@@ -39,6 +39,14 @@ is available from that one page, which also works on a phone, follows Home Assis
 - **Several routers**: a selector appears at the top.
 - **Safety**: the panel and its websocket commands are for administrators only; changing a main Wi-Fi
   network (it disconnects everything on it), blocking a device and rebooting all ask first.
+- **When the login breaks**: if the router password is changed the integration asks for re-authentication (it does not
+  keep trying a wrong password until the router locks you out); if the router gets a new address or protocol use the
+  integration's "Reconfigure" instead of deleting and re-adding it. A pasted browser address is fine in the host field.
+- **Follows the router's mode**: switch the router to AP (or back) in its own UI and the integration notices on the
+  next poll and reloads.
+- **Missing firmware features do not stop the integration**: a feature the router answers "Method not found" to
+  (a model without a blocklist, say) is simply switched off, and the panel hides the matching tab or section.
+- **Download diagnostics** on the device page, with passwords, Wi-Fi keys, MACs, IPs and names redacted.
 - Entities, services and the panel share one write path: the same checks (MAC / IP format, IP inside the
   LAN range, duplicate reservations, Wi-Fi name and password length) and the same activity log.
 
@@ -79,14 +87,20 @@ data:
 
 ## Known limitations
 
-- **The Wi-Fi password entities show the password in clear text**: the state of each "Wi-Fi … password"
-  `text` entity is the current Wi-Fi password, visible to every Home Assistant user who can see entity
-  states and stored in the history database. If you do not want that, disable these entities under
-  Settings → Devices & services → Entities (the panel's Wi-Fi tab does not depend on them).
+- **The Wi-Fi password entities do not show the password by default**: the `text` entities "Wi-Fi … password" are
+  disabled by default and their state is "unknown" (write-only). An entity state is readable by every Home Assistant
+  user who can see states and is stored in the history database. To show the passwords on a dashboard (a guest
+  network QR card, say) turn on "Show Wi-Fi passwords as entity states" in the integration's options. The panel does
+  not need it: an administrator presses "Show current password" and the password is read from the router then.
+  When upgrading from 0.3.x, the old password states are still in the history database; `recorder.purge_entities`
+  removes them.
+- Every known device gets 4 entities (upload / download speed, presence, block switch) plus a device, including the
+  offline ones the router remembers; a site with hundreds of devices gets a long entity list. Disable what you do not
+  need under Settings → Devices & services → Entities (turn off "Enable newly added entities" in the integration's
+  System options to keep newly discovered devices quiet). After the router is switched to AP mode the per-device entities stay in the
+  registry as unavailable placeholders until you delete them.
 - Applying a Wi-Fi change takes about 8–9 s (the router reloads its wireless networks); the panel shows it
   is working.
-- Reboot is wired up but has not been pressed on a real router yet (it takes the whole network down); every
-  other write was tested on a real router.
 - **Removing a static IP lease (`lan.remove_static_bind`) does not work over the API on the firmware
   tested so far** (it returns `Invalid params` regardless of the parameters sent). The
   `remove_static_ip` service reports this limitation directly, with the manual SSH + uci command to use
@@ -98,6 +112,21 @@ data:
 - Only tested against a GL-SFT1200 (Opal). Other firmware 4.x models should share the same object/method
   namespace, but not every method necessarily exists on every model — a `Method not found` error means
   that model/firmware doesn't support it.
+
+## Testing
+
+- `pytest -q tests`: the backend suite (login handshake, error handling, the config flow including re-authentication,
+  reconfigure and options, websocket permissions, panel registration, entities, diagnostics, translation checks).
+- `cd frontend && npm test`: the panel's formatting helpers, and the contract between the panel's strings and the
+  backend's error codes and activity messages.
+- `cd frontend && npm run e2e`: browser tests of the panel against a fake Home Assistant (AP mode, several routers,
+  allow-list mode, hundreds of devices, very long or hostile names, missing firmware features, a rejected login,
+  recovery after a lost connection, an accessibility scan); see `frontend/e2e/README.md`.
+- `tools/mock_router.py`: an in-memory GL.iNet router (same login handshake and response shapes, including what is
+  broken on the real firmware) that you can steer while it runs (latency, hanging, garbage replies, missing methods,
+  a changed password, reboots, hundreds of devices ...). Run
+  `uv run --python 3.13 --with passlib python tools/mock_router.py --port 8780 --clients 60`, then add the
+  integration with host `<this machine>:8780`, scheme http, user root, password mockpass.
 
 ## Development
 

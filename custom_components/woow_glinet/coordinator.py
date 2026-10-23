@@ -3,21 +3,38 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .actions import GlinetActions
-from .api import GlinetApiError, GlinetClient
+from .api import METHOD_NOT_FOUND, GlinetApiError, GlinetClient, GlinetInvalidAuth
 from .const import DOMAIN, MODE_ROUTER, UPDATE_INTERVAL
+from .device import router_device_info
 from .history import TrafficHistory
+from .sanitize import dicts, strings
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _wifi_bands(res: Any) -> list[dict[str, Any]]:
+    """The bands, each with only the interfaces that are objects with a name (the platforms rely on it)."""
+    return [
+        {**band, "ifaces": [i for i in dicts(band.get("ifaces")) if isinstance(i.get("name"), str) and i["name"]]}
+        for band in dicts(res)
+    ]
+
+
+def _with_mac(value: Any) -> list[dict[str, Any]]:
+    """The client records that are objects with a MAC address in text form (everything keys off it)."""
+    return [c for c in dicts(value) if isinstance(c.get("mac"), str) and c["mac"]]
 
 
 @dataclass
@@ -55,63 +72,113 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
         self.actions = GlinetActions(self)
         self.history = TrafficHistory()
         self.clock_skew = 0.0  # this host's clock minus the router's, to show "online since" in our time
+        # "object.method" names this firmware does not have; the feature behind each one is switched off
+        # instead of the whole integration failing (models and firmware versions differ).
+        self.unsupported: set[str] = set()
+        self.auth_failed = False  # the router rejected the credentials: stop polling until they are fixed
+        self._setup_mode: str | None = None  # the mode the entities were built for
+        self._reload_scheduled = False
+        self.router_device_id: str | None = None  # the router's device registry id; client devices hang under it
+
+    async def _fetch(self, obj: str, method: str, default: Any) -> Any:
+        """One router call; a method the firmware does not have gives `default` (once logged), other errors raise."""
+        key = f"{obj}.{method}"
+        try:
+            result = await self.client.call(obj, method)
+        except GlinetApiError as err:
+            if err.code == METHOD_NOT_FOUND:
+                if key not in self.unsupported:
+                    self.unsupported.add(key)
+                    _LOGGER.info("這台路由器的韌體沒有 %s，用到它的功能先停用", key)
+                return default
+            raise
+        self.unsupported.discard(key)
+        if result is None or (isinstance(default, dict) and not isinstance(result, dict)):
+            # Lua serialises an empty table as [], so "nothing" can arrive as a list
+            return default
+        return result
+
+    def _credentials_rejected(self) -> None:
+        """Stop polling and ask for new credentials, instead of hammering the router with a wrong password."""
+        self.auth_failed = True
+        if self.config_entry is not None:
+            self.config_entry.async_start_reauth(self.hass)
 
     async def _async_fetch_device_info(self) -> None:
         if self.device_info:
             return
         try:
-            self.device_info = await self.client.call("system", "get_info") or {}
+            self.device_info = await self._fetch("system", "get_info", {})
         except GlinetApiError as err:
+            if isinstance(err, GlinetInvalidAuth):
+                raise
             _LOGGER.debug("讀取 system.get_info 失敗（不影響其他感測器）：%s", err)
 
-    async def _async_fetch_mode(self) -> None:
-        """只在第一次抓,之後快cache——模式是使用者刻意切的,很少變,
-        整合期間重新偵測沒有意義;真的切了模式要重新載入這個整合才會生效。"""
-        try:
-            result = await self.client.call("netmode", "get_mode")
-            self.mode = (result or {}).get("mode", MODE_ROUTER)
-        except GlinetApiError as err:
-            _LOGGER.debug("讀取 netmode.get_mode 失敗，當作 router 模式：%s", err)
+    async def _async_check_mode(self) -> None:
+        """Read the network mode on every poll: a switch to AP / repeater / ... in the router's own UI reloads the entry,
+        so the entities follow (per-device entities only make sense in router mode)."""
+        result = await self._fetch("netmode", "get_mode", {})
+        self.mode = result.get("mode", MODE_ROUTER)
+        if self._setup_mode is None:
+            self._setup_mode = self.mode
+        elif self.mode != self._setup_mode and not self._reload_scheduled and self.config_entry is not None:
+            _LOGGER.info("路由器的上網模式從 %s 變成 %s，重新載入整合", self._setup_mode, self.mode)
+            self._reload_scheduled = True
+            self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
 
     async def _async_update_data(self) -> GlinetData:
-        await self._async_fetch_device_info()
-        if self.data is None:
-            await self._async_fetch_mode()
-
         try:
-            wan_speed = await self.client.call("clients", "get_wan_speed")
-            clients_res = await self.client.call("clients", "get_list")
-            wifi_res = await self.client.call("wifi", "get_config")
-            static_res = await self.client.call("lan", "get_static_bind_list")
-            bwl_res = await self.client.call("black_white_list", "get_config")
+            data = await self._async_poll()
+        except GlinetInvalidAuth as err:
+            self.auth_failed = True  # Home Assistant starts the re-authentication flow and stops polling
+            raise ConfigEntryAuthFailed(f"路由器拒絕了帳號或密碼：{err}") from err
         except GlinetApiError as err:
             raise UpdateFailed(f"跟路由器溝通失敗：{err}") from err
+        self.auth_failed = False
+        return data
 
+    async def _async_poll(self) -> GlinetData:
+        await self._async_fetch_device_info()
+        await self._async_check_mode()
+
+        wan_speed = await self._fetch("clients", "get_wan_speed", {})
+        clients_res = await self._fetch("clients", "get_list", {})
+        wifi_res = await self._fetch("wifi", "get_config", {})
+        static_res = await self._fetch("lan", "get_static_bind_list", {})
+        bwl_res = await self._fetch("black_white_list", "get_config", {})
         # 只給面板用（運行時間、負載、記憶體、WAN 連線狀態），讀不到不影響其他功能。
         try:
-            system = await self.client.call("system", "get_status") or {}
+            system = await self._fetch("system", "get_status", {})
+        except GlinetInvalidAuth:
+            raise
         except GlinetApiError as err:
             _LOGGER.debug("讀取 system.get_status 失敗（不影響其他感測器）：%s", err)
             system = {}
-        if (router_time := system.get("system", {}).get("timestamp")) is not None:
-            self.clock_skew = time.time() - float(router_time)
+        if "system" in system and not isinstance(system["system"], dict):  # Lua serialises an empty table as []
+            system = {**system, "system": {}}
+        try:
+            skew = time.time() - float(system["system"]["timestamp"])
+            if math.isfinite(skew):
+                self.clock_skew = skew
+        except (KeyError, TypeError, ValueError):
+            pass  # no usable clock: "online since" falls back to the last skew
 
-        clients = (clients_res or {}).get("clients", [])
+        clients = _with_mac(clients_res.get("clients"))
         if self.mode == MODE_ROUTER:
             # 非 router 模式下 clients.get_list 看到的是整個共用網段的所有裝置
             # (不是只有接這台裝置的),不要幫這些裝置建 HA device,會灌一堆跟這台
             # 裝置無關的「幽靈裝置」進裝置登錄表。
             self._async_sync_client_devices(clients)
-            self.history.add(time.time(), wan_speed or {}, clients)
+            self.history.add(time.time(), wan_speed, clients)
 
         return GlinetData(
-            wan_speed=wan_speed or {},
+            wan_speed=wan_speed,
             clients=clients,
-            wifi_bands=(wifi_res or {}).get("res", []),
-            static_binds=(static_res or {}).get("static_bind_list", []),
-            blacklist_mode=(bwl_res or {}).get("mode", "black"),
-            black_mac=list((bwl_res or {}).get("black_mac", [])),
-            white_mac=list((bwl_res or {}).get("white_mac", [])),
+            wifi_bands=_wifi_bands(wifi_res.get("res")),
+            static_binds=dicts(static_res.get("static_bind_list")),
+            blacklist_mode=bwl_res.get("mode", "black"),
+            black_mac=strings(bwl_res.get("black_mac")),
+            white_mac=strings(bwl_res.get("white_mac")),
             device_info=self.device_info,
             mode=self.mode,
             system=system,
@@ -119,8 +186,12 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
 
     async def async_live_poll(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Just the traffic numbers, for the panel while a browser has it open (entities keep their own pace)."""
-        wan_speed = await self.client.call("clients", "get_wan_speed") or {}
-        clients = ((await self.client.call("clients", "get_list")) or {}).get("clients", [])
+        try:
+            wan_speed = await self._fetch("clients", "get_wan_speed", {})
+            clients = _with_mac((await self._fetch("clients", "get_list", {})).get("clients"))
+        except GlinetInvalidAuth:
+            self._credentials_rejected()
+            raise
         self.history.add(time.time(), wan_speed, clients)
         return wan_speed, clients
 
@@ -136,12 +207,12 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
         router-side device name changes later.
         """
         registry = dr.async_get(self.hass)
-        router_device_id: str | None = None
-        if self.config_entry is not None:
-            router_device = registry.async_get_device(
-                identifiers={(DOMAIN, self.config_entry.entry_id)}
-            )
-            router_device_id = router_device.id if router_device else None
+        entry = self.config_entry
+        if self.router_device_id is None:
+            # create the router's own device first, so the clients can be attached to it from the start
+            self.router_device_id = registry.async_get_or_create(
+                config_entry_id=entry.entry_id, **router_device_info(entry.entry_id, self.device_info)
+            ).id
 
         for client in clients:
             mac = client.get("mac")
@@ -153,5 +224,5 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
                 identifiers={(DOMAIN, f"client_{mac}")},
                 connections={(dr.CONNECTION_NETWORK_MAC, mac)},
                 name=name,
-                via_device_id=router_device_id,
+                via_device_id=self.router_device_id,
             )

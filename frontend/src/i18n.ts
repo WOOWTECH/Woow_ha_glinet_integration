@@ -1,6 +1,6 @@
 // Panel strings. Follows the Home Assistant user's language: Chinese (any zh-*) or English.
 
-const en = {
+export const en = {
   title: "WOOW GL.iNet",
   tab_overview: "Overview",
   tab_clients: "Devices",
@@ -30,6 +30,11 @@ const en = {
 
   // overview
   unreachable: "The router does not answer. Showing what was last read.",
+  auth_failed: "The router rejected the stored login (was the password changed?). Re-authenticate under Settings › Devices & services › WOOW GL.iNet.",
+  open_integration: "Open the integration",
+  reconnecting: "Lost the connection to Home Assistant. Trying again…",
+  sort_label: "Sort devices",
+  traffic_now: "Download {rx}, upload {tx}",
   mode_router: "Router mode",
   mode_ap: "Access point mode",
   mode_wds: "WDS mode",
@@ -197,6 +202,7 @@ const en = {
     "That device already has a fixed IP, and this router's API cannot remove the old one, so it is not added twice.",
   err_ip_already_bound: "That address is already given to another device.",
   err_client_online: "Only offline devices can be forgotten.",
+  err_auth_failed: "The router rejected the stored login. Re-authenticate under Settings › Devices & services.",
   err_api_error: "The router reported an error",
   err_not_loaded: "That router is not loaded.",
   err_failed: "The change failed",
@@ -204,7 +210,7 @@ const en = {
 
 export type Key = keyof typeof en;
 
-const zh: Record<Key, string> = {
+export const zh: Record<Key, string> = {
   title: "WOOW GL.iNet",
   tab_overview: "總覽",
   tab_clients: "裝置",
@@ -233,6 +239,11 @@ const zh: Record<Key, string> = {
   router_pick: "路由器",
 
   unreachable: "路由器沒有回應，顯示的是最後一次讀到的資料。",
+  auth_failed: "路由器拒絕了儲存的帳號密碼（是不是改過密碼？）。請到「設定 › 裝置與服務 › WOOW GL.iNet」重新驗證。",
+  open_integration: "開啟整合頁面",
+  reconnecting: "跟 Home Assistant 的連線中斷了，重新連線中…",
+  sort_label: "裝置排序",
+  traffic_now: "下載 {rx}，上傳 {tx}",
   mode_router: "路由器模式",
   mode_ap: "AP 模式",
   mode_wds: "WDS 模式",
@@ -389,6 +400,7 @@ const zh: Record<Key, string> = {
   err_mac_already_bound: "這台裝置已經有固定 IP，而這台路由器的 API 沒辦法移除舊的，所以不重複新增。",
   err_ip_already_bound: "這個位址已經給了另一台裝置。",
   err_client_online: "只能移除離線裝置的記錄。",
+  err_auth_failed: "路由器拒絕了儲存的帳號密碼，請到「設定 › 裝置與服務」重新驗證。",
   err_api_error: "路由器回報錯誤",
   err_not_loaded: "這台路由器沒有載入。",
   err_failed: "沒能完成修改",
@@ -447,7 +459,13 @@ export function formatBytes(bytes: number): string {
     value /= 1000;
     unit += 1;
   }
-  const digits = unit === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  let digits = unit === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  if (Number(value.toFixed(digits)) >= 1000 && unit < UNITS.length - 1) {
+    // 999.6 kB rounds to "1000 kB": carry into the next unit instead
+    value /= 1000;
+    unit += 1;
+    digits = 2;
+  }
   return `${value.toFixed(digits)} ${UNITS[unit]}`;
 }
 

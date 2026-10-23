@@ -17,18 +17,12 @@ from homeassistant.helpers.event import async_track_time_interval
 from .activity import ActivityLog
 from .api import GlinetApiError
 from .const import DOMAIN, LIVE_INTERVAL, MODE_ROUTER
+from .sanitize import as_dict, as_float, as_int, dicts
 
 if TYPE_CHECKING:
     from .coordinator import GlinetCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _int(value: Any) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _static_by_mac(binds: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -39,7 +33,7 @@ def client_record(client: dict[str, Any], statics: dict[str, dict[str, Any]], sk
     """One client as the panel wants it (numbers as numbers, "online since" in this host's clock)."""
     mac = str(client.get("mac", ""))
     online = bool(client.get("online"))
-    since = client.get("online_time")
+    since = as_float(client.get("online_time"))
     return {
         "mac": mac,
         "ip": client.get("ip") or "",
@@ -48,13 +42,13 @@ def client_record(client: dict[str, Any], statics: dict[str, dict[str, Any]], sk
         "online": online,
         "blocked": bool(client.get("blocked")),
         "iface": client.get("iface") or "",
-        "rx": _int(client.get("rx")),
-        "tx": _int(client.get("tx")),
-        "total_rx": _int(client.get("total_rx")),
-        "total_tx": _int(client.get("total_tx")),
-        "limit_rx": _int(client.get("limit_rx")),
-        "limit_tx": _int(client.get("limit_tx")),
-        "since": float(since) + skew if online and since else None,
+        "rx": as_int(client.get("rx")),
+        "tx": as_int(client.get("tx")),
+        "total_rx": as_int(client.get("total_rx")),
+        "total_tx": as_int(client.get("total_tx")),
+        "limit_rx": as_int(client.get("limit_rx")),
+        "limit_tx": as_int(client.get("limit_tx")),
+        "since": since + skew if online and since else None,
         "static_ip": (statics.get(mac.upper()) or {}).get("ip"),
     }
 
@@ -64,12 +58,12 @@ def router_snapshot(coordinator: GlinetCoordinator, with_history: bool = False) 
     entry = coordinator.config_entry
     data = coordinator.data
     info = data.device_info or {}
-    board = info.get("board_info", {})
+    board = as_dict(info.get("board_info"))
     status = data.system or {}
-    system = status.get("system", {})
-    wifi_up = {w.get("name"): bool(w.get("up")) for w in status.get("wifi", [])}
-    online_links = [n.get("interface") for n in status.get("network", []) if n.get("online")]
-    stations = (status.get("client") or [{}])[0]
+    system = status.get("system") if isinstance(status.get("system"), dict) else {}
+    wifi_up = {w.get("name"): bool(w.get("up")) for w in dicts(status.get("wifi"))}
+    online_links = [n.get("interface") for n in dicts(status.get("network")) if n.get("online")]
+    stations = (dicts(status.get("client")) or [{}])[0]
     statics = _static_by_mac(data.static_binds)
     snapshot: dict[str, Any] = {
         "entry_id": entry.entry_id,
@@ -94,8 +88,8 @@ def router_snapshot(coordinator: GlinetCoordinator, with_history: bool = False) 
         "wan": {
             "online": bool(online_links),
             "links": online_links,
-            "rx": _int(data.wan_speed.get("speed_rx")),
-            "tx": _int(data.wan_speed.get("speed_tx")),
+            "rx": as_int(data.wan_speed.get("speed_rx")),
+            "tx": as_int(data.wan_speed.get("speed_tx")),
         },
         "stations": {"wireless": stations.get("wireless_total"), "cable": stations.get("cable_total")},
         "wifi": [
@@ -115,7 +109,7 @@ def router_snapshot(coordinator: GlinetCoordinator, with_history: bool = False) 
                         "encryption": iface.get("encryption"),
                         "bssid": iface.get("bssid"),
                     }
-                    for iface in band.get("ifaces", [])
+                    for iface in dicts(band.get("ifaces"))
                 ],
             }
             for band in data.wifi_bands
@@ -123,8 +117,17 @@ def router_snapshot(coordinator: GlinetCoordinator, with_history: bool = False) 
         "clients": [client_record(c, statics, coordinator.clock_skew) for c in data.clients if c.get("mac")],
         "static_binds": [{"mac": b.get("mac"), "ip": b.get("ip"), "name": b.get("name")} for b in data.static_binds],
         "blocklist": {"mode": data.blacklist_mode, "black": data.black_mac, "white": data.white_mac},
+        "auth_failed": coordinator.auth_failed,
+        # Features this firmware lacks (the router answered "Method not found") are hidden in the panel.
         # lan.remove_static_bind is broken on the firmware this was written against (always "Invalid params").
-        "features": {"static_ip_remove": False},
+        "features": {
+            "static_ip_remove": False,
+            "wan_speed": "clients.get_wan_speed" not in coordinator.unsupported,
+            "clients": "clients.get_list" not in coordinator.unsupported,
+            "wifi": "wifi.get_config" not in coordinator.unsupported,
+            "static_ip": "lan.get_static_bind_list" not in coordinator.unsupported,
+            "blocklist": "black_white_list.get_config" not in coordinator.unsupported,
+        },
     }
     if with_history:
         snapshot["history"] = {"wan": coordinator.history.wan_series()}
@@ -200,7 +203,7 @@ class PanelFeed:
 
     async def _live(self, coordinator: GlinetCoordinator) -> None:
         entry_id = coordinator.config_entry.entry_id
-        if entry_id in self._busy:  # the router is slow: do not pile polls up
+        if entry_id in self._busy or coordinator.auth_failed:  # slow router: no pile-up; wrong password: no retries
             return
         self._busy.add(entry_id)
         try:
@@ -214,6 +217,6 @@ class PanelFeed:
         self._push("live", {
             "entry_id": entry_id,
             "t": time.time(),
-            "wan": {"rx": _int(wan.get("speed_rx")), "tx": _int(wan.get("speed_tx"))},
+            "wan": {"rx": as_int(wan.get("speed_rx")), "tx": as_int(wan.get("speed_tx"))},
             "clients": [client_record(c, statics, coordinator.clock_skew) for c in clients if c.get("mac")],
         })

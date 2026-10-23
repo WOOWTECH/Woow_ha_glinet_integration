@@ -33,8 +33,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
     entities: list[SensorEntity] = [GlinetModeSensor(coordinator), GlinetFirmwareSensor(coordinator)]
     if is_router:
         entities += [
-            GlinetWanSpeedSensor(coordinator, "speed_rx", "WAN 下載速度"),
-            GlinetWanSpeedSensor(coordinator, "speed_tx", "WAN 上傳速度"),
+            GlinetWanSpeedSensor(coordinator, "speed_rx"),
+            GlinetWanSpeedSensor(coordinator, "speed_tx"),
             GlinetConnectedClientsSensor(coordinator),
         ]
     async_add_entities(entities)
@@ -52,8 +52,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
             if not mac or mac in known_macs:
                 continue
             known_macs.add(mac)
-            new_entities.append(GlinetClientSpeedSensor(coordinator, mac, "rx", "下載速度"))
-            new_entities.append(GlinetClientSpeedSensor(coordinator, mac, "tx", "上傳速度"))
+            new_entities.append(GlinetClientSpeedSensor(coordinator, mac, "rx"))
+            new_entities.append(GlinetClientSpeedSensor(coordinator, mac, "tx"))
         if new_entities:
             async_add_entities(new_entities)
 
@@ -65,7 +65,7 @@ class GlinetModeSensor(GlinetEntity, SensorEntity):
     """目前的上網模式(router/ap/repeater/...)，決定哪些其他 entity 會出現。"""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "模式"
+    _attr_translation_key = "mode"
 
     def __init__(self, coordinator: GlinetCoordinator) -> None:
         super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_mode")
@@ -82,10 +82,10 @@ class GlinetWanSpeedSensor(GlinetEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfDataRate.BYTES_PER_SECOND
 
-    def __init__(self, coordinator: GlinetCoordinator, key: str, name: str) -> None:
+    def __init__(self, coordinator: GlinetCoordinator, key: str) -> None:
         super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_wan_{key}")
         self._key = key
-        self._attr_name = name
+        self._attr_translation_key = {"speed_rx": "wan_download", "speed_tx": "wan_upload"}[key]
 
     @property
     def native_value(self) -> float | None:
@@ -97,7 +97,7 @@ class GlinetConnectedClientsSensor(GlinetEntity, SensorEntity):
     """目前在線的區網裝置數。"""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_name = "連線裝置數"
+    _attr_translation_key = "connected_clients"
 
     def __init__(self, coordinator: GlinetCoordinator) -> None:
         super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_connected_clients")
@@ -111,7 +111,7 @@ class GlinetFirmwareSensor(GlinetEntity, SensorEntity):
     """韌體版本(診斷用)。"""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "韌體版本"
+    _attr_translation_key = "firmware"
 
     def __init__(self, coordinator: GlinetCoordinator) -> None:
         super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_firmware_version")
@@ -128,10 +128,10 @@ class GlinetClientSpeedSensor(GlinetClientEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfDataRate.BYTES_PER_SECOND
 
-    def __init__(self, coordinator: GlinetCoordinator, mac: str, key: str, name: str) -> None:
+    def __init__(self, coordinator: GlinetCoordinator, mac: str, key: str) -> None:
         super().__init__(coordinator, mac, f"{coordinator.config_entry.entry_id}_{mac}_{key}")
         self._key = key
-        self._attr_name = name
+        self._attr_translation_key = {"rx": "client_download", "tx": "client_upload"}[key]
 
     @property
     def available(self) -> bool:

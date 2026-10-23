@@ -11,14 +11,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .activity import Origin
 from .const import MODE_ROUTER
 from .coordinator import GlinetCoordinator
-from .entity import GlinetClientEntity, GlinetEntity
+from .entity import GlinetClientEntity, GlinetWifiEntity
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: GlinetCoordinator = entry.runtime_data.coordinator
 
     wifi_entities = [
-        GlinetWifiSwitch(coordinator, iface["name"], iface.get("ssid") or iface["name"])
+        GlinetWifiSwitch(coordinator, iface["name"])
         for band in coordinator.data.wifi_bands
         for iface in band.get("ifaces", [])
     ]
@@ -48,20 +48,13 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
     _async_add_new_clients()
 
 
-class GlinetWifiSwitch(GlinetEntity, SwitchEntity):
+class GlinetWifiSwitch(GlinetWifiEntity, SwitchEntity):
     """開/關一個 WiFi 介面(主頻或 guest)。"""
 
-    def __init__(self, coordinator: GlinetCoordinator, iface_name: str, name: str) -> None:
-        super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_wifi_{iface_name}")
-        self._iface_name = iface_name
-        self._attr_name = f"WiFi {name}"
+    _attr_translation_key = "wifi"
 
-    def _iface(self) -> dict | None:
-        for band in self.coordinator.data.wifi_bands:
-            for iface in band.get("ifaces", []):
-                if iface.get("name") == self._iface_name:
-                    return iface
-        return None
+    def __init__(self, coordinator: GlinetCoordinator, iface_name: str) -> None:
+        super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_wifi_{iface_name}", iface_name)
 
     @property
     def available(self) -> bool:
@@ -87,7 +80,7 @@ class GlinetWifiSwitch(GlinetEntity, SwitchEntity):
 class GlinetClientBlockSwitch(GlinetClientEntity, SwitchEntity):
     """封鎖/允許某個裝置連上 LAN/WiFi(MAC 黑名單)。"""
 
-    _attr_name = "封鎖"
+    _attr_translation_key = "client_block"
     _attr_entity_registry_enabled_default = True
 
     def __init__(self, coordinator: GlinetCoordinator, mac: str) -> None:

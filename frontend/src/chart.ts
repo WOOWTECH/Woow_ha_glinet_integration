@@ -7,19 +7,10 @@ import { property, state } from "lit/decorators.js";
 import { Sample, define } from "./api";
 import { Translate, clock, formatRate } from "./i18n";
 import { shared } from "./styles";
+import { niceCeil } from "./util";
 
 const PAD = { l: 4, r: 4, t: 16, b: 18 };
 const MIN_TOP = 1000; // bytes/s: an idle line stays flat at the bottom instead of zooming into noise
-
-/** The next 1 / 2 / 5 × 10^k at or above `value`, so the scale does not jump around. */
-export function niceCeil(value: number): number {
-  if (value <= 0) return 1;
-  const exp = Math.pow(10, Math.floor(Math.log10(value)));
-  for (const step of [1, 2, 5, 10]) {
-    if (step * exp >= value) return step * exp;
-  }
-  return 10 * exp;
-}
 
 export class WoowGlinetChart extends LitElement {
   @property({ attribute: false }) samples: Sample[] = [];
@@ -149,7 +140,10 @@ export class WoowGlinetChart extends LitElement {
     const area = (index: 1 | 2) => `${path(index)} L${x(t1).toFixed(1)},${base} L${x(t0).toFixed(1)},${base} Z`;
     const point = this.hover !== null ? data[Math.min(this.hover, data.length - 1)] : null;
     const withSeconds = t1 - t0 < 600;
+    const last = data[data.length - 1];
     return html`<svg
+        role="img"
+        aria-label=${this.t("traffic_now", { rx: formatRate(last[1]), tx: formatRate(last[2]) })}
         viewBox="0 0 ${w} ${height}"
         height=${height}
         @pointermove=${(e: PointerEvent) => !this.compact && this.onMove(e, data, x)}

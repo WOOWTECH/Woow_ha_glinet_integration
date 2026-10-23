@@ -17,6 +17,8 @@ import "./views/wifi";
 type Tab = "overview" | "clients" | "wifi" | "access" | "activity";
 const ACTIVITY_KEEP = 300;
 const WAN_KEEP = 1500;
+const RETRY_MS = 5000; // try again this soon after a failed (re)connect
+const STALE_MS = 70000; // no event for this long: the feed is gone (Home Assistant restarted, a proxy dropped it)
 const MENU = "M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z";
 
 export class WoowGlinetPanel extends LitElement {
@@ -43,6 +45,13 @@ export class WoowGlinetPanel extends LitElement {
   private connecting = false;
   private ticker?: number;
   private toastTimer?: number;
+  private watchdog?: number;
+  private retryTimer?: number;
+  private lastEvent = Date.now();
+  private readonly onReady = () => void this.resync();
+  private readonly onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && this.confirmReq && !this.confirmBusy) this.confirmReq = null;
+  };
 
   static styles = [
     shared,
@@ -81,7 +90,7 @@ export class WoowGlinetPanel extends LitElement {
         border-radius: 0;
         background: none;
         color: var(--app-header-text-color, var(--text-primary-color, #fff));
-        opacity: 0.75;
+        opacity: 0.85;
         padding: 10px 14px;
         white-space: nowrap;
       }
@@ -127,6 +136,8 @@ export class WoowGlinetPanel extends LitElement {
     const first = !this._hass;
     this._hass = hass;
     if (first) {
+      // after Home Assistant's socket reconnects (it restarted, the network dropped) fetch everything again
+      hass.connection.addEventListener?.("ready", this.onReady);
       this.t = makeTranslate(hass.locale?.language ?? hass.language ?? "en");
       if (this.isConnected) void this.connect();
       this.requestUpdate();
@@ -141,19 +152,54 @@ export class WoowGlinetPanel extends LitElement {
     super.connectedCallback();
     if (this._hass && !this.unsubscribe) void this.connect();
     this.ticker = window.setInterval(() => (this.now = Date.now()), 5000);
+    this.watchdog = window.setInterval(() => this.watch(), 15000);
+    window.addEventListener("keydown", this.onKey);
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     window.clearInterval(this.ticker);
+    window.clearInterval(this.watchdog);
     window.clearTimeout(this.toastTimer);
-    void this.unsubscribe?.();
+    window.clearTimeout(this.retryTimer);
+    window.removeEventListener("keydown", this.onKey);
+    this._hass?.connection.removeEventListener?.("ready", this.onReady);
+    void this.dropSubscription();
+  }
+
+  updated(changed: Map<string, unknown>): void {
+    if (changed.has("confirmReq") && this.confirmReq) {
+      // a destructive question starts on "Cancel", so Enter cannot confirm it by accident
+      const selector = this.confirmReq.danger ? ".dialog button:not(.primary)" : ".dialog button.primary";
+      (this.renderRoot.querySelector(selector) as HTMLButtonElement | null)?.focus();
+    }
+  }
+
+  private async dropSubscription(): Promise<void> {
+    const stop = this.unsubscribe;
     this.unsubscribe = undefined;
+    try {
+      await stop?.();
+    } catch {
+      // the socket may be gone already
+    }
+  }
+
+  private async resync(): Promise<void> {
+    if (this.connecting) return;
+    await this.dropSubscription();
+    await this.connect();
+  }
+
+  private watch(): void {
+    if (this._hass && !this.connecting && Date.now() - this.lastEvent > STALE_MS) void this.resync();
   }
 
   private async connect(): Promise<void> {
-    if (this.connecting || this.unsubscribe) return;
+    if (this.connecting) return;
     this.connecting = true;
+    window.clearTimeout(this.retryTimer);
+    await this.dropSubscription();
     try {
       // Subscribe first: events that race the snapshot only replace what it holds, so nothing is lost.
       this.unsubscribe = await this.api.subscribe((event) => this.onEvent(event));
@@ -163,14 +209,18 @@ export class WoowGlinetPanel extends LitElement {
       this.activity = snap.activity;
       this.loaded = true;
       this.error = "";
+      this.lastEvent = Date.now();
     } catch (err) {
+      // e.g. Home Assistant is still starting and does not know our commands yet: keep trying
       this.error = errorText(err);
+      this.retryTimer = window.setTimeout(() => void this.connect(), RETRY_MS);
     } finally {
       this.connecting = false;
     }
   }
 
   private onEvent(event: FeedEvent): void {
+    this.lastEvent = Date.now();
     switch (event.kind) {
       case "router": {
         const id = event.router.entry_id;
@@ -209,8 +259,17 @@ export class WoowGlinetPanel extends LitElement {
   }
 
   private tabsFor(router: Router | undefined): Tab[] {
-    // Outside router mode the device list is the whole shared network and blocking / fixed IPs do not apply.
-    return router && router.mode !== "router" ? ["overview", "wifi", "activity"] : ["overview", "clients", "wifi", "access", "activity"];
+    if (!router) return ["overview", "clients", "wifi", "access", "activity"];
+    // Outside router mode the device list is the whole shared network and blocking / fixed IPs do not apply;
+    // a feature this firmware lacks (the router said "Method not found") has no tab either.
+    const inRouterMode = router.mode === "router";
+    const f = router.features;
+    const tabs: Tab[] = ["overview"];
+    if (inRouterMode && f.clients) tabs.push("clients");
+    if (f.wifi) tabs.push("wifi");
+    if (inRouterMode && (f.blocklist || f.static_ip)) tabs.push("access");
+    tabs.push("activity");
+    return tabs;
   }
 
   private toggleMenu(): void {
@@ -240,7 +299,7 @@ export class WoowGlinetPanel extends LitElement {
     if (!request) return nothing;
     const t = this.t;
     return html`<div class="scrim" @click=${(e: Event) => e.target === e.currentTarget && !this.confirmBusy && (this.confirmReq = null)}>
-      <div class="dialog" role="dialog">
+      <div class="dialog" role="dialog" aria-modal="true" aria-label=${request.title}>
         <h2>${request.title}</h2>
         ${request.text ? html`<div class="muted">${request.text}</div>` : nothing}
         <div class="row">
@@ -295,8 +354,9 @@ export class WoowGlinetPanel extends LitElement {
       </div>
       <div class="content" @notify=${(e: CustomEvent<{ text: string; ok: boolean }>) => this.showToast(e)}
         @confirm=${(e: CustomEvent<ConfirmRequest>) => (this.confirmReq = e.detail)}>
-        ${this.error
-          ? html`<div class="card"><div class="error">${t("error", { msg: this.error })}</div></div>`
+        ${this.error && this.loaded ? html`<div class="banner bad" role="alert">${t("reconnecting")}</div>` : nothing}
+        ${this.error && !this.loaded
+          ? html`<div class="card"><div class="error" role="alert">${t("error", { msg: this.error })}</div></div>`
           : !this.loaded
             ? html`<div class="empty">${t("loading")}</div>`
             : !router
@@ -304,7 +364,7 @@ export class WoowGlinetPanel extends LitElement {
               : html`${this.routerList.length > 1
                     ? html`<div class="row picker">
                         <span class="muted">${t("router_pick")}</span>
-                        <select @change=${(e: Event) => (this.selected = (e.target as HTMLSelectElement).value)}>
+                        <select aria-label=${t("router_pick")} @change=${(e: Event) => (this.selected = (e.target as HTMLSelectElement).value)}>
                           ${this.routerList.map((r) => html`<option value=${r.entry_id} ?selected=${r.entry_id === router.entry_id}>${r.title}</option>`)}
                         </select>
                       </div>`
@@ -312,7 +372,7 @@ export class WoowGlinetPanel extends LitElement {
                   ${this.renderTab(router, tab)}`}
       </div>
       ${this.renderConfirm()}
-      ${this.toast ? html`<div class="toast ${this.toast.ok ? "" : "bad"}">${this.toast.text}</div>` : nothing}
+      ${this.toast ? html`<div class="toast ${this.toast.ok ? "" : "bad"}" role="status" aria-live="polite">${this.toast.text}</div>` : nothing}
     `;
   }
 }

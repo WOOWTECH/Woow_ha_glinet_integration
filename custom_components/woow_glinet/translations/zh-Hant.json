@@ -3,7 +3,26 @@
     "step": {
       "user": {
         "title": "設定 GL.iNet 路由器",
-        "description": "輸入路由器的管理位址與密碼。如果 Home Assistant 跟路由器不在同一個網段(例如路由器的 LAN 側被 NAT 隔開),要填它在這個網段上可以連到的位址(例如它的 WAN IP),並視情況開 HTTPS。",
+        "description": "輸入路由器的管理位址與密碼。如果 Home Assistant 跟路由器不在同一個網段(例如路由器的 LAN 側被 NAT 隔開),要填它在這個網段上可以連到的位址(例如它的 WAN IP),並視情況開 HTTPS。直接貼上瀏覽器的網址(例如 https://192.168.8.1/)也可以。",
+        "data": {
+          "host": "位址(IP 或網域)",
+          "username": "帳號",
+          "password": "密碼",
+          "scheme": "通訊協定",
+          "verify_ssl": "驗證 SSL 憑證"
+        }
+      },
+      "reauth_confirm": {
+        "title": "重新驗證 {name}",
+        "description": "{host} 的路由器拒絕了儲存的帳號或密碼(是不是改過密碼?)。請輸入目前的帳號密碼。",
+        "data": {
+          "username": "帳號",
+          "password": "密碼"
+        }
+      },
+      "reconfigure": {
+        "title": "修改 {name} 的設定",
+        "description": "修改這台路由器的位址、通訊協定或登入帳號。密碼留空就是沿用目前的。",
         "data": {
           "host": "位址(IP 或網域)",
           "username": "帳號",
@@ -18,7 +37,10 @@
       "cannot_connect": "連不到路由器,請確認位址跟網路"
     },
     "abort": {
-      "already_configured": "這台路由器已經設定過了"
+      "already_configured": "這台路由器已經設定過了",
+      "reauth_successful": "重新驗證成功",
+      "reconfigure_successful": "設定已更新",
+      "wrong_device": "這個位址是另一台路由器,不是正在修改的這台"
     }
   },
   "services": {
@@ -29,6 +51,63 @@
     "remove_static_ip": {
       "name": "移除固定 IP",
       "description": "移除某個裝置的 DHCP 固定 IP 綁定。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "WOOW GL.iNet 選項",
+        "description": "把 WiFi 密碼顯示成文字實體的狀態。打開後，所有看得到實體狀態的使用者都讀得到密碼，也會記進歷史資料庫。側邊欄面板不需要這個選項。",
+        "data": {
+          "expose_wifi_passwords": "把 WiFi 密碼顯示成實體狀態"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "mode": {
+        "name": "模式"
+      },
+      "firmware": {
+        "name": "韌體版本"
+      },
+      "connected_clients": {
+        "name": "連線裝置數"
+      },
+      "wan_download": {
+        "name": "WAN 下載速度"
+      },
+      "wan_upload": {
+        "name": "WAN 上傳速度"
+      },
+      "client_download": {
+        "name": "下載速度"
+      },
+      "client_upload": {
+        "name": "上傳速度"
+      }
+    },
+    "switch": {
+      "wifi": {
+        "name": "WiFi {ssid}"
+      },
+      "client_block": {
+        "name": "封鎖"
+      }
+    },
+    "text": {
+      "wifi_ssid": {
+        "name": "WiFi {ssid} SSID"
+      },
+      "wifi_key": {
+        "name": "WiFi {ssid} 密碼"
+      }
+    },
+    "button": {
+      "reboot": {
+        "name": "重新開機"
+      }
     }
   }
 }

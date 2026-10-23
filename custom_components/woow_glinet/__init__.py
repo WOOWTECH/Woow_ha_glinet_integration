@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import aiohttp_client, config_validation as cv, device_registry as dr
+from homeassistant.core import callback
+from homeassistant.helpers import aiohttp_client, config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from . import panel, websocket_api
@@ -19,6 +22,8 @@ from .feed import PanelFeed
 from .services import async_register_services
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+_BARE_MAC = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -70,6 +75,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GlinetConfigEntry) -> bo
 
     entry.runtime_data = GlinetRuntimeData(client=client, coordinator=coordinator)
 
+    await _async_scope_tracker_unique_ids(hass, entry)
+
     feed: PanelFeed = hass.data[DOMAIN]["feed"]
     entry.async_on_unload(coordinator.async_add_listener(lambda: feed.router_updated(coordinator)))
 
@@ -78,6 +85,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: GlinetConfigEntry) -> bo
     await panel.async_register_panel(hass)
 
     return True
+
+
+async def _async_scope_tracker_unique_ids(hass: HomeAssistant, entry: GlinetConfigEntry) -> None:
+    """Device trackers used to be registered under the bare MAC (Home Assistant's ScannerEntity derives its unique id
+    from it), so a second router that knows the same device got no tracker of its own: scope them to the router."""
+
+    @callback
+    def migrate(entity_entry: er.RegistryEntry) -> dict[str, Any] | None:
+        if entity_entry.domain == "device_tracker" and _BARE_MAC.match(entity_entry.unique_id or ""):
+            return {"new_unique_id": f"{entry.entry_id}_{entity_entry.unique_id}_tracker"}
+        return None
+
+    await er.async_migrate_entries(hass, entry.entry_id, migrate)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: GlinetConfigEntry) -> bool:
@@ -97,12 +117,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: GlinetConfigEntry) -> b
 def async_get_coordinator_for_device(
     hass: HomeAssistant, device_id: str
 ) -> GlinetCoordinator | None:
-    """Resolve the coordinator that owns a given device registry entry."""
+    """The coordinator of the loaded router that owns a given device registry entry (None if there is none)."""
     device = dr.async_get(hass).async_get(device_id)
     if device is None:
         return None
-    for entry_id in device.config_entries:
-        entry = hass.config_entries.async_get_entry(entry_id)
-        if entry is not None and entry.domain == DOMAIN:
-            return entry.runtime_data.coordinator
-    return None
+    entry = hass.config_entries.async_get_entry(device.config_entry_id)
+    if entry is None or entry.domain != DOMAIN or entry.state is not ConfigEntryState.LOADED:
+        return None
+    return entry.runtime_data.coordinator

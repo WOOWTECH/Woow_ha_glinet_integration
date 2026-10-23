@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from pathlib import Path
@@ -18,31 +19,38 @@ BUNDLE = Path(__file__).parent / "frontend" / PANEL_FILE
 
 async def async_register_panel(hass: HomeAssistant) -> None:
     data = hass.data.setdefault(DOMAIN, {})
-    if data.get("panel"):
-        return
-    try:
-        raw = await hass.async_add_executor_job(BUNDLE.read_bytes)
-    except OSError:
-        _LOGGER.warning("Panel bundle %s is missing; the sidebar panel is not available", BUNDLE)
-        return
-    url = f"{PANEL_STATIC}/{PANEL_FILE}"
-    if not data.get("panel_static"):  # a static route cannot be removed, so register it once per run
-        await hass.http.async_register_static_paths([StaticPathConfig(url, str(BUNDLE), cache_headers=False)])
-        data["panel_static"] = True
-    await panel_custom.async_register_panel(
-        hass,
-        frontend_url_path=PANEL_URL,
-        webcomponent_name=PANEL_ELEMENT,
-        sidebar_title="WOOW GL.iNet",
-        sidebar_icon=PANEL_ICON,
-        # The content hash makes a browser fetch the new bundle after an update.
-        module_url=f"{url}?v={hashlib.md5(raw).hexdigest()[:8]}",
-        require_admin=True,
-        embed_iframe=False,
-        trust_external=False,
-        config={},
-    )
-    data["panel"] = True
+    # Several routers set up at the same time all come here: one registration at a time, or the second
+    # one trips over the first one's static route.
+    async with data.setdefault("panel_lock", asyncio.Lock()):
+        if data.get("panel"):
+            return
+        try:
+            raw = await hass.async_add_executor_job(BUNDLE.read_bytes)
+        except OSError:
+            _LOGGER.warning("Panel bundle %s is missing; the sidebar panel is not available", BUNDLE)
+            return
+        url = f"{PANEL_STATIC}/{PANEL_FILE}"
+        try:
+            if not data.get("panel_static"):  # a static route cannot be removed, so register it once per run
+                await hass.http.async_register_static_paths([StaticPathConfig(url, str(BUNDLE), cache_headers=False)])
+                data["panel_static"] = True
+            await panel_custom.async_register_panel(
+                hass,
+                frontend_url_path=PANEL_URL,
+                webcomponent_name=PANEL_ELEMENT,
+                sidebar_title="WOOW GL.iNet",
+                sidebar_icon=PANEL_ICON,
+                # The content hash makes a browser fetch the new bundle after an update.
+                module_url=f"{url}?v={hashlib.md5(raw, usedforsecurity=False).hexdigest()[:8]}",
+                require_admin=True,
+                embed_iframe=False,
+                trust_external=False,
+                config={},
+            )
+        except Exception:  # noqa: BLE001 - the panel is a nicety: the router's entities must come up without it
+            _LOGGER.exception("Could not register the WOOW GL.iNet sidebar panel; the entities are not affected")
+            return
+        data["panel"] = True
 
 
 @callback

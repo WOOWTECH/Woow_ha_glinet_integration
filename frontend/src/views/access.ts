@@ -157,7 +157,7 @@ export class WoowGlinetAccess extends LitElement {
           <option value="">${t("pick_client")}</option>
           ${blockable.map((c) => html`<option value=${c.mac} ?selected=${c.mac === this.blockMac}>${clientName(c)} · ${c.ip}</option>`)}
         </select>
-        <input class="mono" placeholder=${t("mac_ph")} .value=${this.blockMac} @input=${(e: Event) => (this.blockMac = value(e))}
+        <input class="mono" placeholder=${t("mac_ph")} aria-label=${t("mac_ph")} .value=${this.blockMac} @input=${(e: Event) => (this.blockMac = value(e))}
           @keydown=${(e: KeyboardEvent) => e.key === "Enter" && this.blockMac.trim() && this.block(this.blockMac.trim())} />
         <button class="danger" ?disabled=${this.busy || !this.blockMac.trim()} @click=${() => this.block(this.blockMac.trim())}>${t("act_block")}</button>
       </div>
@@ -190,9 +190,9 @@ export class WoowGlinetAccess extends LitElement {
           <option value="">${t("pick_client")}</option>
           ${candidates.map((c) => html`<option value=${c.mac} ?selected=${c.mac === this.fixMac}>${clientName(c)} · ${c.ip}</option>`)}
         </select>
-        <input class="mono" placeholder=${t("mac_ph")} .value=${this.fixMac} @input=${(e: Event) => (this.fixMac = value(e))} />
-        <input class="mono" placeholder=${t("ip_address")} .value=${this.fixIp} @input=${(e: Event) => (this.fixIp = value(e))} />
-        <input placeholder=${t("device_name")} .value=${this.fixName} @input=${(e: Event) => (this.fixName = value(e))}
+        <input class="mono" placeholder=${t("mac_ph")} aria-label=${t("mac_ph")} .value=${this.fixMac} @input=${(e: Event) => (this.fixMac = value(e))} />
+        <input class="mono" placeholder=${t("ip_address")} aria-label=${t("ip_address")} .value=${this.fixIp} @input=${(e: Event) => (this.fixIp = value(e))} />
+        <input placeholder=${t("device_name")} aria-label=${t("device_name")} .value=${this.fixName} @input=${(e: Event) => (this.fixName = value(e))}
           @keydown=${(e: KeyboardEvent) => e.key === "Enter" && this.addFix()} />
         <button class="primary" ?disabled=${this.busy || !this.fixMac.trim() || !this.fixIp.trim() || !this.fixName.trim()} @click=${() => this.addFix()}>${t("add")}</button>
       </div>
@@ -201,7 +201,8 @@ export class WoowGlinetAccess extends LitElement {
   }
 
   render() {
-    return html`${this.renderBlocklist()}${this.renderStatic()}`;
+    const f = this.router.features;
+    return html`${f.blocklist ? this.renderBlocklist() : nothing}${f.static_ip ? this.renderStatic() : nothing}`;
   }
 }
 

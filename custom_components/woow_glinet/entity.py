@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER
+from .const import DOMAIN
 from .coordinator import GlinetCoordinator
+from .device import router_device_info
 
 
 class GlinetEntity(CoordinatorEntity[GlinetCoordinator]):
@@ -18,16 +20,7 @@ class GlinetEntity(CoordinatorEntity[GlinetCoordinator]):
         super().__init__(coordinator)
         self._attr_unique_id = unique_id
 
-        info = coordinator.device_info
-        board = info.get("board_info", {})
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.config_entry.entry_id)},
-            manufacturer=MANUFACTURER,
-            model=board.get("model") or info.get("vendor") or "GL.iNet router",
-            name=board.get("hostname") or info.get("vendor") or "GL.iNet router",
-            sw_version=info.get("firmware_version"),
-            connections={("mac", info["mac"])} if info.get("mac") else set(),
-        )
+        self._attr_device_info = router_device_info(coordinator.config_entry.entry_id, coordinator.device_info)
 
 
 class GlinetClientEntity(CoordinatorEntity[GlinetCoordinator]):
@@ -42,7 +35,7 @@ class GlinetClientEntity(CoordinatorEntity[GlinetCoordinator]):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"client_{mac}")},
             connections={("mac", mac)},
-            via_device=(DOMAIN, coordinator.config_entry.entry_id),
+            via_device_id=coordinator.router_device_id,
             name=self._client_name(),
         )
 
@@ -57,3 +50,32 @@ class GlinetClientEntity(CoordinatorEntity[GlinetCoordinator]):
         if client:
             return client.get("name") or client.get("alias") or self._mac
         return self._mac
+
+
+class GlinetWifiEntity(GlinetEntity):
+    """Base for the entities of one Wi-Fi interface: named after its SSID, kept current when it is renamed."""
+
+    def __init__(self, coordinator: GlinetCoordinator, unique_id: str, iface_name: str) -> None:
+        super().__init__(coordinator, unique_id)
+        self._iface_name = iface_name
+        self._attr_translation_placeholders = {"ssid": self._ssid()}
+
+    def _iface(self) -> dict | None:
+        for band in self.coordinator.data.wifi_bands:
+            for iface in band.get("ifaces", []):
+                if iface.get("name") == self._iface_name:
+                    return iface
+        return None
+
+    def _ssid(self) -> str:
+        return (self._iface() or {}).get("ssid") or self._iface_name
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        placeholders = {"ssid": self._ssid()}
+        if placeholders != self._attr_translation_placeholders:
+            self._attr_translation_placeholders = placeholders
+            # Home Assistant computes the translated name once and caches it (functools-style, in the instance
+            # dict): drop that so the renamed SSID shows up in the name at the next state write.
+            self.__dict__.pop("name", None)
+        super()._handle_coordinator_update()

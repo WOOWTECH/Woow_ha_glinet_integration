@@ -6,15 +6,9 @@ from collections import deque
 from typing import Any
 
 from .const import HISTORY_CLIENT_KEEP, HISTORY_CLIENTS_MAX, HISTORY_WAN_KEEP
+from .sanitize import as_int
 
 Sample = tuple[float, int, int]  # (unix time, rx bytes/s, tx bytes/s)
-
-
-def _int(value: Any) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
 
 
 class TrafficHistory:
@@ -25,7 +19,7 @@ class TrafficHistory:
         self.clients: dict[str, deque[Sample]] = {}
 
     def add(self, when: float, wan: dict[str, Any], clients: list[dict[str, Any]]) -> None:
-        self.wan.append((when, _int(wan.get("speed_rx")), _int(wan.get("speed_tx"))))
+        self.wan.append((when, as_int(wan.get("speed_rx")), as_int(wan.get("speed_tx"))))
         for client in clients:
             mac = client.get("mac")
             if not mac or not client.get("online"):
@@ -33,7 +27,7 @@ class TrafficHistory:
             series = self.clients.pop(mac, None)  # re-inserted below: dict order = least recently seen first
             if series is None:
                 series = deque(maxlen=HISTORY_CLIENT_KEEP)
-            series.append((when, _int(client.get("rx")), _int(client.get("tx"))))
+            series.append((when, as_int(client.get("rx")), as_int(client.get("tx"))))
             self.clients[mac] = series
         while len(self.clients) > HISTORY_CLIENTS_MAX:
             del self.clients[next(iter(self.clients))]

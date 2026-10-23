@@ -83,6 +83,7 @@ export class WoowGlinetOverview extends LitElement {
       }
       .top {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 10px;
       }
       .top .who {
@@ -189,7 +190,7 @@ export class WoowGlinetOverview extends LitElement {
           ? html`<span class="chip ok">${t("wan_online")}</span> <span class="muted">${r.wan.links.map((l) => linkLabel(l, t)).join(", ")}</span>`
           : html`<span class="chip bad">${t("wan_offline")}</span>`,
       )}
-      ${r.mode === "router"
+      ${r.mode === "router" && r.features.clients
         ? this.fact(t("fact_devices"), html`${t("devices_online", { n: online })}<div class="muted">${t("devices_split", { wired, wireless })}</div>`)
         : nothing}
     </div>`;
@@ -248,7 +249,12 @@ export class WoowGlinetOverview extends LitElement {
     const r = this.router;
     const t = this.t;
     return html`
-      ${!r.available ? html`<div class="banner bad">${t("unreachable")}</div>` : nothing}
+      ${r.auth_failed
+        ? html`<div class="banner bad" role="alert">${t("auth_failed")}
+            <a href="/config/integrations/integration/woow_glinet">${t("open_integration")}</a></div>`
+        : !r.available
+          ? html`<div class="banner bad" role="alert">${t("unreachable")}</div>`
+          : nothing}
       ${r.mode !== "router" ? html`<div class="banner">${t("mode_note")}</div>` : nothing}
       <div class="card">
         <div class="row">
@@ -263,7 +269,8 @@ export class WoowGlinetOverview extends LitElement {
           <button class="danger" @click=${() => this.reboot()}>${t("reboot")}</button>
         </div>
       </div>
-      ${r.mode === "router" ? html`${this.renderTraffic()}${this.renderBusiest()}` : nothing}
+      ${r.mode === "router" && r.features.wan_speed ? this.renderTraffic() : nothing}
+      ${r.mode === "router" && r.features.clients ? this.renderBusiest() : nothing}
     `;
   }
 }

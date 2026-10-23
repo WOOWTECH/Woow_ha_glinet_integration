@@ -19,7 +19,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
 class GlinetRebootButton(GlinetEntity, ButtonEntity):
     """重新開機路由器。"""
 
-    _attr_name = "重新開機"
+    _attr_translation_key = "reboot"
     _attr_device_class = ButtonDeviceClass.RESTART
 
     def __init__(self, coordinator: GlinetCoordinator) -> None:

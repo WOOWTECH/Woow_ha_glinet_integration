@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from homeassistant.components.device_tracker import ScannerEntity, SourceType
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import MODE_ROUTER
@@ -45,6 +46,24 @@ class GlinetClientTracker(GlinetClientEntity, ScannerEntity):
 
     def __init__(self, coordinator: GlinetCoordinator, mac: str) -> None:
         super().__init__(coordinator, mac, f"{coordinator.config_entry.entry_id}_{mac}_tracker")
+
+    @property
+    def unique_id(self) -> str | None:
+        # ScannerEntity would use the bare MAC: scoped to the router, two routers that know the same device each
+        # get their own tracker
+        return self._attr_unique_id
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        # ScannerEntity returns None for a MAC that is already registered; our own DeviceInfo ties the tracker to the
+        # client's device, so its entity id comes from the client's name instead of the (long) unique id
+        return self._attr_device_info
+
+    @property
+    def hostname(self) -> str | None:
+        # without it ScannerEntity renames the client's device to its MAC when the entity is added
+        client = self._client_data()
+        return (client.get("name") or client.get("alias") or None) if client else None
 
     @property
     def source_type(self) -> SourceType:

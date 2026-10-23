@@ -22,7 +22,7 @@ export class WoowGlinetActivity extends LitElement {
     css`
       .entry {
         display: grid;
-        grid-template-columns: 7.5em 1fr;
+        grid-template-columns: 7.5em minmax(0, 1fr);
         gap: 4px 12px;
         padding: 10px 0;
         border-top: 1px solid var(--divider-color, #eee);
@@ -58,7 +58,7 @@ export class WoowGlinetActivity extends LitElement {
     return html`<div class="card">
       <div class="row">
         <h2 class="grow">${t("tab_activity")}</h2>
-        <select @change=${(e: Event) => (this.channel = value(e))}>
+        <select @change=${(e: Event) => (this.channel = value(e))} aria-label=${t("all_channels")}>
           <option value="">${t("all_channels")}</option>
           ${["panel", "service", "entity"].map((c) => html`<option value=${c}>${this.channelLabel(c)}</option>`)}
         </select>

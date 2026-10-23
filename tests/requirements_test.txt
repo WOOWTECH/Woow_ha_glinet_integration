@@ -1,0 +1,10 @@
+# Test requirements for WOOW GL.iNet. Python 3.14 (Home Assistant 2026.10 needs it).
+#
+#   uv venv --python 3.14 .venv && uv pip install --python .venv/bin/python -r tests/requirements_test.txt
+#   .venv/bin/python -m pytest tests
+#
+# pytest-homeassistant-custom-component pins the exact homeassistant (2026.10.2 here), pytest, pytest-asyncio,
+# pytest-socket (no real sockets), pytest-timeout, pytest-freezer and pytest-cov, so those are not repeated.
+# passlib is the integration's own runtime requirement (manifest.json); the mock router in tools/ needs it too.
+pytest-homeassistant-custom-component==0.13.373
+passlib==1.7.4

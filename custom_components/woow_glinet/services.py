@@ -8,6 +8,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 
 from .activity import Origin
 from .const import (
@@ -81,10 +82,12 @@ def async_register_services(hass: HomeAssistant) -> None:
             "/etc/init.d/dnsmasq restart。"
         )
 
-    hass.services.async_register(
-        DOMAIN, SERVICE_ADD_STATIC_IP, _async_add_static_ip, schema=ADD_STATIC_IP_SCHEMA
+    # Changing the router is for administrators only (a read-only user must not reserve addresses through the API).
+    async_register_admin_service(
+        hass, DOMAIN, SERVICE_ADD_STATIC_IP, _async_add_static_ip, schema=ADD_STATIC_IP_SCHEMA
     )
-    hass.services.async_register(
+    async_register_admin_service(
+        hass,
         DOMAIN,
         SERVICE_REMOVE_STATIC_IP,
         _async_remove_static_ip,

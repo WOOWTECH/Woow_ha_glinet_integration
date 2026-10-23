@@ -3,6 +3,8 @@
 export interface HomeAssistant {
   connection: {
     subscribeMessage<T>(callback: (msg: T) => void, msg: Record<string, unknown>): Promise<() => Promise<void>>;
+    addEventListener?(type: "ready" | "disconnected", listener: () => void): void;
+    removeEventListener?(type: "ready" | "disconnected", listener: () => void): void;
   };
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
   language: string;
@@ -77,7 +79,15 @@ export interface Router {
   clients: Client[];
   static_binds: StaticBind[];
   blocklist: { mode: string; black: string[]; white: string[] };
-  features: { static_ip_remove: boolean };
+  auth_failed: boolean;
+  features: {
+    static_ip_remove: boolean;
+    wan_speed: boolean;
+    clients: boolean;
+    wifi: boolean;
+    static_ip: boolean;
+    blocklist: boolean;
+  };
   history?: { wan: Sample[] };
 }
 

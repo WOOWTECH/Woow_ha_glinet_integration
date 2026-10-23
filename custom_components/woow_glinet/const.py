@@ -32,6 +32,10 @@ MANUFACTURER = "GL.iNet"
 SERVICE_ADD_STATIC_IP = "add_static_ip"
 SERVICE_REMOVE_STATIC_IP = "remove_static_ip"
 
+# Integration option: show the Wi-Fi passwords as the state of their text entities (readable by every user who can
+# see entity states, and kept in the history database). Off by default; the panel never depends on it.
+OPTION_EXPOSE_WIFI_PASSWORDS = "expose_wifi_passwords"
+
 ATTR_MAC = "mac"
 ATTR_IP = "ip"
 ATTR_NAME = "name"
