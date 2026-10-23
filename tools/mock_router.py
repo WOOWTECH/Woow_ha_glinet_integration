@@ -132,7 +132,7 @@ class MockRouter:
                 elif key == "dark_for":
                     self.dark_until = time.time() + float(value)
                 elif key == "client_names":
-                    for c, name in zip(self.clients, value):
+                    for c, name in zip(self.clients, value, strict=False):
                         c["name"] = c["alias"] = name
                 elif key == "ssids":
                     for b in self.bands:

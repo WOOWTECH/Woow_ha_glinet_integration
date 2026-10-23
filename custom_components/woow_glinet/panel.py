@@ -47,7 +47,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
                 trust_external=False,
                 config={},
             )
-        except Exception:  # noqa: BLE001 - the panel is a nicety: the router's entities must come up without it
+        except Exception:
             _LOGGER.exception("Could not register the WOOW GL.iNet sidebar panel; the entities are not affected")
             return
         data["panel"] = True

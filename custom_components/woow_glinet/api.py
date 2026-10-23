@@ -115,7 +115,7 @@ class GlinetClient:
             ) from err
         except (ServerDisconnectedError, ClientOSError) as err:  # connected, then cut off: what a rebooting router does
             raise GlinetDisconnected(f"路由器中斷了連線（{self._base_url}）：{type(err).__name__}") from err
-        except (ClientError, asyncio.TimeoutError) as err:
+        except (TimeoutError, ClientError) as err:
             raise GlinetApiError(
                 f"無法連線到 {self._base_url}：{str(err) or type(err).__name__}"
             ) from err
