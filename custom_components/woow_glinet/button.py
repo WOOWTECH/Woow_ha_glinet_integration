@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .api import GlinetApiError
+from .activity import Origin
 from .coordinator import GlinetCoordinator
 from .entity import GlinetEntity
 
@@ -27,7 +26,4 @@ class GlinetRebootButton(GlinetEntity, ButtonEntity):
         super().__init__(coordinator, f"{coordinator.config_entry.entry_id}_reboot")
 
     async def async_press(self) -> None:
-        try:
-            await self.coordinator.client.call("system", "reboot")
-        except GlinetApiError as err:
-            raise HomeAssistantError(f"重新開機失敗：{err}") from err
+        await self.coordinator.actions.reboot(origin=Origin("entity", self._context))

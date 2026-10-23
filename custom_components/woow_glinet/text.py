@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from homeassistant.components.text import TextEntity, TextMode
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .api import GlinetApiError
+from .activity import Origin
 from .coordinator import GlinetCoordinator
 from .entity import GlinetEntity
 
@@ -52,15 +51,9 @@ class _GlinetWifiFieldText(GlinetEntity, TextEntity):
         return iface.get(self._field) if iface else None
 
     async def async_set_value(self, value: str) -> None:
-        try:
-            await self.coordinator.client.call(
-                "wifi",
-                "set_config",
-                {"iface_name": self._iface_name, self._field: value},
-            )
-        except GlinetApiError as err:
-            raise HomeAssistantError(f"更新 WiFi 設定失敗：{err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.actions.set_wifi(
+            self._iface_name, origin=Origin("entity", self._context), **{self._field: value}
+        )
 
 
 class GlinetWifiSsidText(_GlinetWifiFieldText):

@@ -84,6 +84,9 @@ class GlinetClient:
         self._password = password
         self._ssl: bool | None = None if verify_ssl else False
         self._sid: str | None = None
+        # The coordinator, the panel's live poll and the entities share one client: only one of
+        # them may log in at a time, the others then reuse the session it got.
+        self._login_lock = asyncio.Lock()
 
     async def _post(self, payload: dict[str, Any]) -> Any:
         try:
@@ -128,17 +131,21 @@ class GlinetClient:
         )
         self._sid = result["sid"]
 
+    async def _ensure_login(self, stale: str | None = None) -> str:
+        """A valid session id: log in unless one exists that is not the `stale` one just refused."""
+        async with self._login_lock:
+            if self._sid is None or self._sid == stale:
+                await self.login()
+            return self._sid  # type: ignore[return-value]
+
     async def call(self, obj: str, method: str, params: dict[str, Any] | None = None) -> Any:
         """Call <object>.<method>, logging in first / again as needed."""
-        if self._sid is None:
-            await self.login()
+        sid = self._sid or await self._ensure_login()
 
-        payload = {"id": 0, "method": "call", "params": [self._sid, obj, method, params or {}]}
+        payload = {"id": 0, "method": "call", "params": [sid, obj, method, params or {}]}
         try:
             return await self._post(payload)
         except GlinetAuthError:
             _LOGGER.debug("session 過期，重新登入後重試 %s.%s", obj, method)
-            self._sid = None
-            await self.login()
-            payload["params"][0] = self._sid
+            payload["params"][0] = await self._ensure_login(stale=sid)
             return await self._post(payload)

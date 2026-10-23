@@ -14,6 +14,33 @@ blocking, static IP leases — all through the router's official `/rpc` JSON-RPC
 - **Device blocking**: MAC-level block/allow for LAN/WiFi access
 - **Static IP**: `add_static_ip` / `remove_static_ip` services for DHCP static leases
 - **Reboot**
+- **Admin panel**: a dedicated "WOOW GL.iNet" sidebar page, built the same way as WOOW Serial and WOOW CAN
+  (see the next section)
+
+## Admin panel
+
+A **WOOW GL.iNet** entry appears in the sidebar (administrators only). Everything the integration can do
+is available from that one page, which also works on a phone, follows Home Assistant's language
+(Traditional Chinese or English) and its light/dark theme:
+
+| Tab | What it has |
+|---|---|
+| **Overview** | Router status (model, firmware, uptime, load, memory, storage, internet link), a **live traffic chart** (download / upload; 5 min / 30 min / all; hover for values), the busiest devices right now, refresh and reboot |
+| **Devices** | Every device the router knows: online/offline, IP, MAC, wired or Wi-Fi, **live up/down speed**, total traffic, time online; search, filter and sort; per device **block / unblock**, **fixed IP**, forget an offline device (or all offline ones at once), and an expandable recent-speed chart |
+| **Wi-Fi** | Each interface (main / guest, 2.4 / 5 GHz): on/off switch, rename (SSID), change the password. The password is not preloaded: "Show current password" asks the router when you press it |
+| **Access** | The MAC blocklist (block by MAC address or pick a known device) and the fixed-IP list with an add form |
+| **Activity** | Who changed what: the panel, a service call (scripts, automations, AI agents) or an entity, which user, success or failure; live, and kept across restarts |
+
+- **Live**: while the panel is open, traffic refreshes every 5 s (the router is only asked more often while
+  someone is looking; entities keep their 30 s); everything else is pushed as it changes.
+- **Mode aware**: when the router is not in router mode (AP, repeater ...) the panel keeps only Overview,
+  Wi-Fi and Activity and says why: the router is then bridged onto another network, so the device list is the
+  whole segment and blocking / fixed IPs make no sense.
+- **Several routers**: a selector appears at the top.
+- **Safety**: the panel and its websocket commands are for administrators only; changing a main Wi-Fi
+  network (it disconnects everything on it), blocking a device and rebooting all ask first.
+- Entities, services and the panel share one write path: the same checks (MAC / IP format, IP inside the
+  LAN range, duplicate reservations, Wi-Fi name and password length) and the same activity log.
 
 ## Requirements
 
@@ -52,6 +79,14 @@ data:
 
 ## Known limitations
 
+- **The Wi-Fi password entities show the password in clear text**: the state of each "Wi-Fi … password"
+  `text` entity is the current Wi-Fi password, visible to every Home Assistant user who can see entity
+  states and stored in the history database. If you do not want that, disable these entities under
+  Settings → Devices & services → Entities (the panel's Wi-Fi tab does not depend on them).
+- Applying a Wi-Fi change takes about 8–9 s (the router reloads its wireless networks); the panel shows it
+  is working.
+- Reboot is wired up but has not been pressed on a real router yet (it takes the whole network down); every
+  other write was tested on a real router.
 - **Removing a static IP lease (`lan.remove_static_bind`) does not work over the API on the firmware
   tested so far** (it returns `Invalid params` regardless of the parameters sent). The
   `remove_static_ip` service reports this limitation directly, with the manual SSH + uci command to use
@@ -63,6 +98,18 @@ data:
 - Only tested against a GL-SFT1200 (Opal). Other firmware 4.x models should share the same object/method
   namespace, but not every method necessarily exists on every model — a `Method not found` error means
   that model/firmware doesn't support it.
+
+## Development
+
+The panel is Lit + TypeScript; the source is in `frontend/` and the built single file is committed as
+`custom_components/woow_glinet/frontend/woow-glinet-panel.js` (no build is needed to install):
+
+```sh
+cd frontend
+npm ci
+npm run build      # writes to custom_components/woow_glinet/frontend/
+npm run typecheck
+```
 
 ## License
 

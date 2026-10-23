@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -11,8 +12,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .actions import GlinetActions
 from .api import GlinetApiError, GlinetClient
 from .const import DOMAIN, MODE_ROUTER, UPDATE_INTERVAL
+from .history import TrafficHistory
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,8 +29,11 @@ class GlinetData:
     wifi_bands: list[dict[str, Any]] = field(default_factory=list)
     static_binds: list[dict[str, Any]] = field(default_factory=list)
     blacklist_mode: str = "black"
+    black_mac: list[str] = field(default_factory=list)
+    white_mac: list[str] = field(default_factory=list)
     device_info: dict[str, Any] = field(default_factory=dict)
     mode: str = MODE_ROUTER
+    system: dict[str, Any] = field(default_factory=dict)  # system.get_status: uptime, load, memory, WAN link ...
 
 
 class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
@@ -46,6 +52,9 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
         self.client = client
         self.device_info: dict[str, Any] = {}
         self.mode: str = MODE_ROUTER
+        self.actions = GlinetActions(self)
+        self.history = TrafficHistory()
+        self.clock_skew = 0.0  # this host's clock minus the router's, to show "online since" in our time
 
     async def _async_fetch_device_info(self) -> None:
         if self.device_info:
@@ -78,12 +87,22 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
         except GlinetApiError as err:
             raise UpdateFailed(f"跟路由器溝通失敗：{err}") from err
 
+        # 只給面板用（運行時間、負載、記憶體、WAN 連線狀態），讀不到不影響其他功能。
+        try:
+            system = await self.client.call("system", "get_status") or {}
+        except GlinetApiError as err:
+            _LOGGER.debug("讀取 system.get_status 失敗（不影響其他感測器）：%s", err)
+            system = {}
+        if (router_time := system.get("system", {}).get("timestamp")) is not None:
+            self.clock_skew = time.time() - float(router_time)
+
         clients = (clients_res or {}).get("clients", [])
         if self.mode == MODE_ROUTER:
             # 非 router 模式下 clients.get_list 看到的是整個共用網段的所有裝置
             # (不是只有接這台裝置的),不要幫這些裝置建 HA device,會灌一堆跟這台
             # 裝置無關的「幽靈裝置」進裝置登錄表。
             self._async_sync_client_devices(clients)
+            self.history.add(time.time(), wan_speed or {}, clients)
 
         return GlinetData(
             wan_speed=wan_speed or {},
@@ -91,9 +110,19 @@ class GlinetCoordinator(DataUpdateCoordinator[GlinetData]):
             wifi_bands=(wifi_res or {}).get("res", []),
             static_binds=(static_res or {}).get("static_bind_list", []),
             blacklist_mode=(bwl_res or {}).get("mode", "black"),
+            black_mac=list((bwl_res or {}).get("black_mac", [])),
+            white_mac=list((bwl_res or {}).get("white_mac", [])),
             device_info=self.device_info,
             mode=self.mode,
+            system=system,
         )
+
+    async def async_live_poll(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Just the traffic numbers, for the panel while a browser has it open (entities keep their own pace)."""
+        wan_speed = await self.client.call("clients", "get_wan_speed") or {}
+        clients = ((await self.client.call("clients", "get_list")) or {}).get("clients", [])
+        self.history.add(time.time(), wan_speed, clients)
+        return wan_speed, clients
 
     def _async_sync_client_devices(self, clients: list[dict[str, Any]]) -> None:
         """Keep each client sub-device's registered name up to date.

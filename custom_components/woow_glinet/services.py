@@ -9,13 +9,12 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
-from .api import GlinetApiError
+from .activity import Origin
 from .const import (
     ATTR_IP,
     ATTR_MAC,
     ATTR_NAME,
     DOMAIN,
-    MODE_ROUTER,
     SERVICE_ADD_STATIC_IP,
     SERVICE_REMOVE_STATIC_IP,
 )
@@ -53,30 +52,18 @@ def async_register_services(hass: HomeAssistant) -> None:
         coordinator = async_get_coordinator_for_device(hass, call.data[ATTR_DEVICE_ID])
         if coordinator is None:
             raise HomeAssistantError(f"找不到對應的 GL.iNet 路由器裝置：{call.data[ATTR_DEVICE_ID]}")
-        if coordinator.data.mode != MODE_ROUTER:
-            # 固定 IP 是這台裝置自己的 DHCP server 的設定,只有 router 模式下
-            # 才有自己的 DHCP server 在跑,其他模式下設了也不會有任何作用。
-            raise HomeAssistantError(
-                f"這台裝置目前是「{coordinator.data.mode}」模式,不是 router 模式,"
-                "沒有自己在跑 DHCP server,設定固定 IP 不會有任何作用,先不執行。"
-            )
         return coordinator
 
     async def _async_add_static_ip(call: ServiceCall) -> None:
+        # 固定 IP 是這台裝置自己的 DHCP server 的設定，只有 router 模式下才有意義，
+        # 這個檢查（和 MAC／IP 格式、網段、重複綁定的檢查）都在 actions 裡。
         coordinator = await _resolve(call)
-        try:
-            await coordinator.client.call(
-                "lan",
-                "add_static_bind",
-                {
-                    "mac": call.data[ATTR_MAC],
-                    "ip": call.data[ATTR_IP],
-                    "name": call.data[ATTR_NAME],
-                },
-            )
-        except GlinetApiError as err:
-            raise HomeAssistantError(f"設定固定 IP 失敗：{err}") from err
-        await coordinator.async_request_refresh()
+        await coordinator.actions.add_static_ip(
+            call.data[ATTR_MAC],
+            call.data[ATTR_IP],
+            call.data[ATTR_NAME],
+            origin=Origin("service", call.context),
+        )
 
     async def _async_remove_static_ip(call: ServiceCall) -> None:
         # 2026-10-22 實測過：lan.remove_static_bind 不管傳什麼參數組合都回
