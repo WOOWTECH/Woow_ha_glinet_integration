@@ -66,11 +66,6 @@ export class WoowGlinetOverview extends LitElement {
         padding: 2px 10px;
         font-size: 0.85em;
       }
-      .ranges button.on {
-        background: var(--primary-color);
-        border-color: var(--primary-color);
-        color: var(--text-primary-color, #fff);
-      }
       .big {
         display: flex;
         flex-wrap: wrap;

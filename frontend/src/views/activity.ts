@@ -31,9 +31,6 @@ export class WoowGlinetActivity extends LitElement {
         color: var(--secondary-text-color);
         font-size: 0.85em;
       }
-      .fail {
-        color: var(--error-color, #db4437);
-      }
     `,
   ];
 

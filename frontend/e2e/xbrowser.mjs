@@ -1,6 +1,7 @@
 import { chromium, firefox, webkit } from "playwright-core";
 const BASE = process.env.E2E_BASE || "http://127.0.0.1:8765/frontend/e2e/harness/index.html";
-const launch = (type) => type.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
+// CHROME_PATH is an installed Chrome: only the Chromium engine may use it (Firefox and WebKit have their own builds)
+const launch = (type) => type.launch({ headless: true, ...(type === chromium && process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const engines = [["chrome", () => launch(chromium)], ["firefox", () => launch(firefox)], ["webkit", () => launch(webkit)]];
 let failed = 0;

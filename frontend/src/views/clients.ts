@@ -55,11 +55,6 @@ export class WoowGlinetClients extends LitElement {
         padding: 2px 10px;
         font-size: 0.85em;
       }
-      .filters button.on {
-        background: var(--primary-color);
-        border-color: var(--primary-color);
-        color: var(--text-primary-color, #fff);
-      }
       .list {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));

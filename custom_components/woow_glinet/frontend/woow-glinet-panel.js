@@ -194,6 +194,15 @@ function t(t,e,i,s){var o,r=arguments.length,a=r<3?e:null===s?s=Object.getOwnPro
   .dialog select {
     font-size: 1.05em;
   }
+  .fail {
+    color: var(--error-color, #db4437);
+  }
+  .filters button.on,
+  .ranges button.on {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--text-primary-color, #fff);
+  }
   /* Text colours from the theme can be too pale on their own tinted backgrounds (WCAG AA wants 4.5:1):
      mix them toward the theme's text colour, which darkens them on a light theme and lightens them on a dark one. */
   @supports (color: color-mix(in srgb, red 50%, blue)) {
@@ -218,6 +227,12 @@ function t(t,e,i,s){var o,r=arguments.length,a=r<3?e:null===s?s=Object.getOwnPro
     }
     .chip {
       color: color-mix(in srgb, var(--secondary-text-color) 70%, var(--primary-text-color, #212121));
+    }
+    /* the selected pill carries small white text: a theme's primary colour is usually too light for that, so darken it */
+    .filters button.on,
+    .ranges button.on {
+      background: color-mix(in srgb, var(--primary-color) 68%, black);
+      border-color: color-mix(in srgb, var(--primary-color) 68%, black);
     }
   }
 `;function Mt(t,e){t.dispatchEvent(new CustomEvent("confirm",{detail:e,bubbles:!0,composed:!0}))}function Pt(t,e,i=!0){t.dispatchEvent(new CustomEvent("notify",{detail:{text:e,ok:i},bubbles:!0,composed:!0}))}const Tt=t=>t.target.value;class It extends ct{constructor(){super(...arguments),this.blockMac="",this.blockError="",this.busy=!1,this.fixMac="",this.fixIp="",this.fixName="",this.fixError=""}nameOf(t){const e=t.toUpperCase(),i=this.router.clients.find(t=>t.mac.toUpperCase()===e);if(i)return vt(i);const s=this.router.static_binds.find(t=>(t.mac??"").toUpperCase()===e);return s?.name||this.t("unknown_device")}async setBlocked(t,e){const i=this.t;this.busy=!0,this.blockError="";try{await this.api.block(this.router.entry_id,t,e),Pt(this,i(e?"blocked_toast":"unblocked_toast",{name:this.nameOf(t)})),e&&(this.blockMac="")}catch(t){this.blockError=wt(t,i)}finally{this.busy=!1}}block(t){const e=this.t;Mt(this,{title:e("block_title",{name:this.nameOf(t)}),text:e("block_text"),action:e("act_block"),danger:!0,run:()=>this.setBlocked(t,!0)})}pickBlock(t){this.blockMac=t}pickFix(t){const e=this.router.clients.find(e=>e.mac===t);this.fixMac=t,e&&(this.fixIp=e.ip,this.fixName=vt(e)===e.mac?"":vt(e))}async addFix(){this.busy=!0,this.fixError="";try{await this.api.addStaticIp(this.router.entry_id,this.fixMac.trim(),this.fixIp.trim(),this.fixName.trim()),Pt(this,this.t("static_saved",{ip:this.fixIp.trim()})),this.fixMac=this.fixIp=this.fixName=""}catch(t){this.fixError=wt(t,this.t)}finally{this.busy=!1}}renderBlocklist(){const t=this.t,e=this.router.blocklist;if("black"!==e.mode)return j`<div class="card">
@@ -333,9 +348,6 @@ function t(t,e,i,s){var o,r=arguments.length,a=r<3?e:null===s?s=Object.getOwnPro
       .when {
         color: var(--secondary-text-color);
         font-size: 0.85em;
-      }
-      .fail {
-        color: var(--error-color, #db4437);
       }
     `],t([ut({attribute:!1})],Nt.prototype,"entries",void 0),t([ut({attribute:!1})],Nt.prototype,"now",void 0),t([ut({attribute:!1})],Nt.prototype,"t",void 0),t([ut({type:Boolean})],Nt.prototype,"multi",void 0),t([ft()],Nt.prototype,"channel",void 0),_t("woow-glinet-activity",Nt);const Ot=2;let Bt=class{constructor(t){}get _$AU(){return this._$AM._$AU}_$AT(t,e,i){this._$Ct=t,this._$AM=e,this._$Ci=i}_$AS(t,e){return this.update(t,e)}update(t,e){return this.render(...e)}};const{I:Rt}=at,Ft=t=>t,Wt=()=>document.createComment(""),Ut=(t,e,i)=>{const s=t._$AA.parentNode,o=void 0===e?t._$AB:e._$AA;if(void 0===i){const e=s.insertBefore(Wt(),o),r=s.insertBefore(Wt(),o);i=new Rt(e,r,t,t.options)}else{const e=i._$AB.nextSibling,r=i._$AM,a=r!==t;if(a){let e;i._$AQ?.(t),i._$AM=t,void 0!==i._$AP&&(e=t._$AU)!==r._$AU&&i._$AP(e)}if(e!==o||a){let t=i._$AA;for(;t!==e;){const e=Ft(t).nextSibling;Ft(s).insertBefore(t,o),t=e}}}return i},Ht=(t,e,i=t)=>(t._$AI(e,i),t),Dt={},Lt=(t,e=Dt)=>t._$AH=e,zt=t=>{t._$AR(),t._$AA.remove()},jt=(t,e,i)=>{const s=new Map;for(let o=e;o<=i;o++)s.set(t[o],o);return s},qt=(t=>(...e)=>({_$litDirective$:t,values:e}))(class extends Bt{constructor(t){if(super(t),t.type!==Ot)throw Error("repeat() can only be used in text expressions")}dt(t,e,i){let s;void 0===i?i=e:void 0!==e&&(s=e);const o=[],r=[];let a=0;for(const e of t)o[a]=s?s(e,a):a,r[a]=i(e,a),a++;return{values:r,keys:o}}render(t,e,i){return this.dt(t,e,i).values}update(t,[e,i,s]){const o=(t=>t._$AH)(t),{values:r,keys:a}=this.dt(e,i,s);if(!Array.isArray(o))return this.ut=a,r;const n=this.ut??=[],l=[];let c,d,h=0,p=o.length-1,u=0,f=r.length-1;for(;h<=p&&u<=f;)if(null===o[h])h++;else if(null===o[p])p--;else if(n[h]===a[u])l[u]=Ht(o[h],r[u]),h++,u++;else if(n[p]===a[f])l[f]=Ht(o[p],r[f]),p--,f--;else if(n[h]===a[f])l[f]=Ht(o[h],r[f]),Ut(t,l[f+1],o[h]),h++,f--;else if(n[p]===a[u])l[u]=Ht(o[p],r[u]),Ut(t,o[h],o[p]),p--,u++;else if(void 0===c&&(c=jt(a,u,f),d=jt(n,h,p)),c.has(n[h]))if(c.has(n[p])){const e=d.get(a[u]),i=void 0!==e?o[e]:null;if(null===i){const e=Ut(t,o[h]);Ht(e,r[u]),l[u]=e}else l[u]=Ht(i,r[u]),Ut(t,o[h],i),o[e]=null;u++}else zt(o[p]),p--;else zt(o[h]),h++;for(;u<=f;){const e=Ut(t,l[f+1]);Ht(e,r[u]),l[u++]=e}for(;h<=p;){const t=o[h++];null!==t&&zt(t)}return this.ut=a,Lt(t,l),G}});const Gt={l:4,r:4,t:16,b:18};class Vt extends ct{constructor(){super(...arguments),this.samples=[],this.window=0,this.compact=!1,this.height=0,this.width=600,this.hover=null}connectedCallback(){super.connectedCallback(),this.observer=new ResizeObserver(t=>{const e=Math.round(t[0].contentRect.width);e>0&&e!==this.width&&(this.width=e)}),this.observer.observe(this)}disconnectedCallback(){super.disconnectedCallback(),this.observer?.disconnect()}get visible(){const t=this.samples;if(!this.window||0===t.length)return t;const e=t[t.length-1][0]-this.window,i=t.findIndex(t=>t[0]>=e);return i<0?[]:t.slice(i)}onMove(t,e,i){const s=t.currentTarget.getBoundingClientRect(),o=t.clientX-s.left;let r=0;for(let t=1;t<e.length;t++)Math.abs(i(e[t][0])-o)<Math.abs(i(e[r][0])-o)&&(r=t);this.hover=r}render(){const t=this.visible,e=this.height||(this.compact?44:170);if(t.length<2)return j`<div class="none" style="height:${e}px">${this.compact?V:this.t("chart_empty")}</div>`;const i=this.compact?{l:2,r:2,t:3,b:3}:Gt,s=this.width,o=t[0][0],r=t[t.length-1][0],a=function(t){if(t<=0)return 1;const e=Math.pow(10,Math.floor(Math.log10(t)));for(const i of[1,2,5,10])if(i*e>=t)return i*e;return 10*e}(Math.max(1e3,...t.map(t=>Math.max(t[1],t[2])))),n=t=>i.l+(t-o)/(r-o||1)*(s-i.l-i.r),l=t=>e-i.b-t/a*(e-i.t-i.b),c=l(0),d=e=>t.map((t,i)=>`${i?"L":"M"}${n(t[0]).toFixed(1)},${l(t[e]).toFixed(1)}`).join(" "),h=t=>`${d(t)} L${n(r).toFixed(1)},${c} L${n(o).toFixed(1)},${c} Z`,p=null!==this.hover?t[Math.min(this.hover,t.length-1)]:null,u=r-o<600,f=t[t.length-1];return j`<svg
         role="img"
@@ -504,11 +516,6 @@ function t(t,e,i,s){var o,r=arguments.length,a=r<3?e:null===s?s=Object.getOwnPro
         padding: 2px 10px;
         font-size: 0.85em;
       }
-      .filters button.on {
-        background: var(--primary-color);
-        border-color: var(--primary-color);
-        color: var(--text-primary-color, #fff);
-      }
       .list {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -642,11 +649,6 @@ function t(t,e,i,s){var o,r=arguments.length,a=r<3?e:null===s?s=Object.getOwnPro
         border-radius: 14px;
         padding: 2px 10px;
         font-size: 0.85em;
-      }
-      .ranges button.on {
-        background: var(--primary-color);
-        border-color: var(--primary-color);
-        color: var(--text-primary-color, #fff);
       }
       .big {
         display: flex;

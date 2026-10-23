@@ -29,5 +29,5 @@ for (const dark of [0, 1]) for (const [scenario, tabs] of [["many", 5], ["white"
 }
 await browser.close();
 if (!found.size) console.log("axe: no violations");
-process.exitCode = [...found.keys()].some((k) => !k.startsWith("color-contrast")) ? 1 : 0; // contrast depends on the theme Home Assistant supplies
+process.exitCode = found.size ? 1 : 0; // the harness carries Home Assistant's default theme, so colour contrast counts too
 for (const [key, v] of [...found].sort()) console.log(`${key.padEnd(34)} ${String(v.n).padStart(4)} nodes  ${v.help}\n     e.g. ${v.html}\n     in ${[...v.where].slice(0, 4).join(", ")}`);

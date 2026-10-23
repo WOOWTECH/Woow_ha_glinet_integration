@@ -197,6 +197,15 @@ export const shared = css`
   .dialog select {
     font-size: 1.05em;
   }
+  .fail {
+    color: var(--error-color, #db4437);
+  }
+  .filters button.on,
+  .ranges button.on {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--text-primary-color, #fff);
+  }
   /* Text colours from the theme can be too pale on their own tinted backgrounds (WCAG AA wants 4.5:1):
      mix them toward the theme's text colour, which darkens them on a light theme and lightens them on a dark one. */
   @supports (color: color-mix(in srgb, red 50%, blue)) {
@@ -221,6 +230,12 @@ export const shared = css`
     }
     .chip {
       color: color-mix(in srgb, var(--secondary-text-color) 70%, var(--primary-text-color, #212121));
+    }
+    /* the selected pill carries small white text: a theme's primary colour is usually too light for that, so darken it */
+    .filters button.on,
+    .ranges button.on {
+      background: color-mix(in srgb, var(--primary-color) 68%, black);
+      border-color: color-mix(in srgb, var(--primary-color) 68%, black);
     }
   }
 `;
